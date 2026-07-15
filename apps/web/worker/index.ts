@@ -4,6 +4,9 @@ import {
   idempotencyKeySchema,
   linkTokenRequestSchema,
   publicTokenExchangeRequestSchema,
+  syncRunCreateRequestSchema,
+  syncRunIdSchema,
+  type SyncWorkerService,
 } from "@ledger/domain/api-contracts";
 import { createStructuredLogger, type StructuredLogger } from "@ledger/domain/logging";
 import {
@@ -11,7 +14,14 @@ import {
   enforceRequestLimits,
   resolveAppRequestPolicy,
 } from "@ledger/domain/request-limits";
-import { AccountRepository, ConnectionRepository, type AccountRecord } from "@ledger/persistence";
+import {
+  AccountRepository,
+  ConnectionRepository,
+  SyncRunPersistenceError,
+  SyncRunRepository,
+  type AccountRecord,
+  type SyncRunRecord,
+} from "@ledger/persistence";
 import { createPlaidClient, type PlaidClient, type PlaidEnvironment } from "@ledger/plaid";
 
 import {
@@ -47,6 +57,7 @@ export interface AppEnv {
   PLAID_SECRET: string;
   PLAID_TOKEN_ENCRYPTION_KEY: string;
   PLAID_WEBHOOK_URL: string;
+  SYNC: SyncWorkerService;
 }
 
 export type AccessGate = (request: Request, env: AppEnv) => Promise<AccessIdentity>;
@@ -251,6 +262,22 @@ function accountReadModel(account: AccountRecord) {
   };
 }
 
+function syncRunReadModel(run: SyncRunRecord) {
+  return {
+    attemptCount: run.attemptCount,
+    connectionId: run.connectionId,
+    createdAt: run.createdAt,
+    finishedAt: run.finishedAt,
+    id: run.id,
+    lastErrorCode: run.lastErrorCode,
+    nextAttemptAt: run.nextAttemptAt,
+    startedAt: run.startedAt,
+    status: run.status,
+    trigger: run.trigger,
+    version: run.version,
+  };
+}
+
 export const createConfiguredPlaidClient: PlaidClientFactory = (env) =>
   createPlaidClient({
     clientId: env.PLAID_CLIENT_ID,
@@ -265,7 +292,7 @@ export function createAppWorker(
   now: () => Date = () => new Date(),
 ) {
   return {
-    async fetch(request: Request, env: AppEnv): Promise<Response> {
+    async fetch(request: Request, env: AppEnv, context?: ExecutionContext): Promise<Response> {
       const url = new URL(request.url);
       const isApiRequest = url.pathname.startsWith(API_PREFIX);
       const secure = (response: Response, noStore = isApiRequest): Response =>
@@ -384,6 +411,118 @@ export function createAppWorker(
               };
             });
             return secure(Response.json({ data: { connections: data }, meta: {} }));
+          } catch {
+            logger.write({
+              errorCode: "INTERNAL_ERROR",
+              event: "API_REQUEST",
+              level: "ERROR",
+              outcome: "FAILED",
+              status: 500,
+            });
+            return secure(internalError());
+          }
+        }
+        if (url.pathname === `${API_PREFIX}/sync-runs`) {
+          if (request.method !== "POST") return secure(methodNotAllowed());
+          const parsedBody = syncRunCreateRequestSchema.safeParse(parseJsonBody(requestBody));
+          const parsedIdempotencyKey = idempotencyKeySchema.safeParse(
+            request.headers.get("Idempotency-Key"),
+          );
+          if (!parsedBody.success || !parsedIdempotencyKey.success) {
+            const error = new RequestLimitError("VALIDATION_ERROR", 422);
+            logger.write({
+              errorCode: error.code,
+              event: "API_REQUEST",
+              level: "WARN",
+              outcome: "DENIED",
+              status: error.status,
+            });
+            return secure(requestLimitDenied(error));
+          }
+
+          try {
+            const result = await new SyncRunRepository(env.DB).enqueueManual({
+              connectionId: parsedBody.data.connectionId,
+              idempotencyKey: parsedIdempotencyKey.data,
+              now: now().toISOString(),
+            });
+            const runId = syncRunIdSchema.safeParse(result.run.id);
+            if (!runId.success) throw new SyncRunPersistenceError("DATABASE_FAILURE");
+            const shouldDispatch = ["QUEUED", "RUNNING", "RETRY_WAIT"].includes(result.run.status);
+            if (shouldDispatch && context) {
+              const dispatchInput = {
+                connectionId: parsedBody.data.connectionId,
+                runId: runId.data,
+              };
+              try {
+                const dispatch = env.SYNC.syncConnection(dispatchInput).catch(() => {
+                  logger.write({
+                    connectionId: parsedBody.data.connectionId,
+                    errorCode: "UPSTREAM_UNAVAILABLE",
+                    event: "SYNC_RUN",
+                    level: "ERROR",
+                    outcome: "FAILED",
+                    syncRunId: result.run.id,
+                  });
+                });
+                context.waitUntil(dispatch);
+              } catch {
+                logger.write({
+                  connectionId: parsedBody.data.connectionId,
+                  errorCode: "UPSTREAM_UNAVAILABLE",
+                  event: "SYNC_RUN",
+                  level: "ERROR",
+                  outcome: "FAILED",
+                  syncRunId: result.run.id,
+                });
+              }
+            }
+
+            const status = result.kind === "CREATED" ? 202 : 200;
+            const response = Response.json(
+              {
+                data: { syncRun: syncRunReadModel(result.run) },
+                meta: {
+                  replayed: result.kind === "REPLAY",
+                  reusedActive: result.kind === "EXISTING_ACTIVE",
+                },
+              },
+              { status },
+            );
+            response.headers.set("Location", `${API_PREFIX}/sync-runs/${runId.data}`);
+            logger.write({
+              connectionId: parsedBody.data.connectionId,
+              event: "API_REQUEST",
+              level: "INFO",
+              outcome: "SUCCESS",
+              status,
+              syncRunId: result.run.id,
+            });
+            return secure(response);
+          } catch (error) {
+            if (error instanceof SyncRunPersistenceError && error.code === "NOT_FOUND") {
+              return secure(notFound());
+            }
+            logger.write({
+              connectionId: parsedBody.data.connectionId,
+              errorCode: "INTERNAL_ERROR",
+              event: "API_REQUEST",
+              level: "ERROR",
+              outcome: "FAILED",
+              status: 500,
+            });
+            return secure(internalError());
+          }
+        }
+        const syncRunPath = new RegExp(`^${API_PREFIX}/sync-runs/([^/]+)$`).exec(url.pathname);
+        if (syncRunPath) {
+          if (request.method !== "GET") return secure(methodNotAllowed());
+          const parsedRunId = syncRunIdSchema.safeParse(syncRunPath[1]);
+          if (!parsedRunId.success) return secure(notFound());
+          try {
+            const run = await new SyncRunRepository(env.DB).findById(parsedRunId.data);
+            if (!run) return secure(notFound());
+            return secure(Response.json({ data: { syncRun: syncRunReadModel(run) }, meta: {} }));
           } catch {
             logger.write({
               errorCode: "INTERNAL_ERROR",

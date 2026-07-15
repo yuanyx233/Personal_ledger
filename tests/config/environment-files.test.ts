@@ -69,4 +69,22 @@ describe("checked-in environment files", () => {
       expect(syncConfig).toContain(`"${secretName}"`);
     }
   });
+
+  it("checks in the bounded at-least-hourly catch-up schedule", async () => {
+    const syncConfig = await readWorkspaceFile("workers/sync/wrangler.jsonc");
+
+    expect(syncConfig).toContain('"*/30 * * * *"');
+    expect(syncConfig).toContain('"SCHEDULED_SYNC_MAX_ITEMS"');
+    expect(syncConfig).toContain('"SCHEDULED_SYNC_MAX_PAGES"');
+    expect(syncConfig).toContain('"SCHEDULED_SYNC_MAX_RUNTIME_MS"');
+    expect(syncConfig).toContain('"SYNC_STALE_AFTER_MINUTES"');
+  });
+
+  it("keeps immediate manual sync on a private Worker RPC binding", async () => {
+    const appConfig = await readWorkspaceFile("apps/web/wrangler.jsonc");
+
+    expect(appConfig).toContain('"binding": "SYNC"');
+    expect(appConfig).toContain('"service": "personal-ledger-sync"');
+    expect(appConfig).toContain('"entrypoint": "SyncService"');
+  });
 });

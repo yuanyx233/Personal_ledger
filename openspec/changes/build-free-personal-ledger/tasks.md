@@ -36,15 +36,15 @@
 
 ## 5. Incremental sync and webhook processing
 
-- [ ] 5.1 Write failing sync tests for initial/multi-page incremental added, modified, removed, retry, and cursor rollback behavior.
-- [ ] 5.2 Implement the shared `/transactions/sync` cursor loop and atomic batch persistence so a cursor advances only after every page succeeds.
-- [ ] 5.3 Write and implement canonical Plaid transaction upsert, exact minor-unit/direction conversion, allowlisted metadata, pending-to-posted linkage, and removed-state handling.
-- [ ] 5.4 Write webhook tests for valid/invalid signature, body hash, timestamp, key, oversized body, unknown Item, duplicate event, and out-of-order event.
-- [ ] 5.5 Implement the sync Worker with only `POST /webhooks/plaid`, Plaid ES256 JWT verification, minimal idempotent event persistence, and fast bounded responses.
-- [ ] 5.6 Implement per-Item sync leases, run states, exponential retry/backoff, and safe resume behavior; prove concurrent triggers cannot run competing cursor loops.
-- [ ] 5.7 Implement the scheduled catch-up handler and stale/failed Item selection with a configurable at-least-hourly cadence and free-plan work caps.
-- [ ] 5.8 Implement the protected idempotent manual sync-run endpoint and status polling, including continuation by a later scheduled execution.
-- [ ] 5.9 Add Sandbox integration fixtures/tests for duplicate and out-of-order webhook delivery, pending-to-posted, Item error/update mode, and missed-webhook catch-up.
+- [x] 5.1 Write failing sync tests for initial/multi-page incremental added, modified, removed, retry, and cursor rollback behavior.
+- [x] 5.2 Implement the shared `/transactions/sync` cursor loop and atomic batch persistence so a cursor advances only after every page succeeds.
+- [x] 5.3 Write and implement canonical Plaid transaction upsert, exact minor-unit/direction conversion, allowlisted metadata, pending-to-posted linkage, and removed-state handling.
+- [x] 5.4 Write webhook tests for valid/invalid signature, body hash, timestamp, key, oversized body, unknown Item, duplicate event, and out-of-order event.
+- [x] 5.5 Implement the sync Worker with only `POST /webhooks/plaid`, Plaid ES256 JWT verification, minimal idempotent event persistence, and fast bounded responses.
+- [x] 5.6 Implement per-Item sync leases, run states, exponential retry/backoff, and safe resume behavior; prove concurrent triggers cannot run competing cursor loops.
+- [x] 5.7 Implement the scheduled catch-up handler and stale/failed Item selection with a configurable at-least-hourly cadence and free-plan work caps.
+- [x] 5.8 Implement the protected idempotent manual sync-run endpoint and status polling, including continuation by a later scheduled execution.
+- [x] 5.9 Add Sandbox integration fixtures/tests for duplicate and out-of-order webhook delivery, pending-to-posted, Item error/update mode, and missed-webhook catch-up.
 
 ## 6. Ledger semantics and review decisions
 

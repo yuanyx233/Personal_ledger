@@ -31,6 +31,13 @@
       },
     },
   ],
+  "services": [
+    {
+      "binding": "SYNC",
+      "service": "personal-ledger-sync",
+      "entrypoint": "SyncService",
+    },
+  ],
   // Required values are loaded from .dev.vars locally and encrypted Worker secrets in production.
   // Source: https://developers.cloudflare.com/workers/configuration/secrets/
   "secrets": {

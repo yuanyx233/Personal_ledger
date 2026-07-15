@@ -7,6 +7,13 @@
   "vars": {
     "APP_TIMEZONE": "America/Toronto",
     "PLAID_ENV": "sandbox",
+    "SCHEDULED_SYNC_MAX_ITEMS": "2",
+    "SCHEDULED_SYNC_MAX_PAGES": "20",
+    "SCHEDULED_SYNC_MAX_RUNTIME_MS": "20000",
+    "SYNC_STALE_AFTER_MINUTES": "60",
+  },
+  "triggers": {
+    "crons": ["*/30 * * * *"],
   },
   "d1_databases": [
     {

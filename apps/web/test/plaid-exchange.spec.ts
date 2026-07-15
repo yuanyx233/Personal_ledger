@@ -87,7 +87,9 @@ function plaidClient(accounts = DEFAULT_ACCOUNTS) {
     createInitialLinkToken: vi.fn<PlaidClient["createInitialLinkToken"]>(),
     createUpdateLinkToken: vi.fn<PlaidClient["createUpdateLinkToken"]>(),
     exchangePublicToken,
+    getWebhookVerificationKey: vi.fn<PlaidClient["getWebhookVerificationKey"]>(),
     getItemAccounts,
+    syncTransactions: vi.fn<PlaidClient["syncTransactions"]>(),
   };
   return { client, exchangePublicToken, getItemAccounts };
 }

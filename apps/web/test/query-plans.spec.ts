@@ -8,7 +8,10 @@ const EXPECTED_INDEXES = [
   "idx_import_batches_status_expiry",
   "idx_import_rows_fingerprint",
   "idx_sync_events_status_received",
-  "idx_sync_runs_active_lease",
+  "idx_sync_events_connection_pending",
+  "idx_sync_runs_one_active_connection",
+  "idx_sync_runs_retry_due",
+  "idx_sync_run_requests_run",
   "idx_transactions_account_date",
   "idx_transactions_category_date",
   "idx_transactions_filter_state_date",
@@ -132,16 +135,29 @@ describe("D1 query plans", () => {
     await expectIndex(
       `SELECT id FROM sync_runs
        WHERE connection_id = ? AND status IN ('QUEUED', 'RUNNING', 'RETRY_WAIT')
-         AND lease_expires_at > ?
-       ORDER BY lease_expires_at, id LIMIT 1`,
-      "idx_sync_runs_active_lease",
-      ["connection-1", "2026-01-15T12:00:00.000Z"],
+       ORDER BY created_at, id LIMIT 1`,
+      "idx_sync_runs_one_active_connection",
+      ["connection-1"],
+    );
+    await expectIndex(
+      `SELECT id FROM sync_runs
+       WHERE status = 'RETRY_WAIT' AND next_attempt_at <= ?
+       ORDER BY next_attempt_at, connection_id, id LIMIT 50`,
+      "idx_sync_runs_retry_due",
+      ["2026-01-15T12:00:00.000Z"],
     );
     await expectIndex(
       `SELECT id FROM sync_events
        WHERE status = ? ORDER BY received_at, id LIMIT 50`,
       "idx_sync_events_status_received",
       ["PENDING"],
+    );
+    await expectIndex(
+      `SELECT id FROM sync_events
+       WHERE connection_id = ? AND status = 'PENDING'
+       ORDER BY received_at, id LIMIT 1`,
+      "idx_sync_events_connection_pending",
+      ["connection-1"],
     );
     await expectIndex(
       "SELECT id FROM import_rows WHERE canonical_fingerprint = ?",

@@ -14,7 +14,9 @@ const structuredLogInputSchema = z.object({
   accountId: internalIdSchema("account-").optional(),
   connectionId: internalIdSchema("connection-").optional(),
   durationMs: z.int().nonnegative().max(3_600_000).optional(),
-  errorCode: z.union([apiErrorCodeSchema, z.literal("SYNC_NOT_READY")]).optional(),
+  errorCode: z
+    .union([apiErrorCodeSchema, z.enum(["ITEM_LOGIN_REQUIRED", "SYNC_NOT_READY"])])
+    .optional(),
   event: z.enum([
     "ACCESS_CHECK",
     "API_REQUEST",

@@ -69,7 +69,9 @@ function linkOnlyClient(
     createInitialLinkToken,
     createUpdateLinkToken,
     exchangePublicToken: vi.fn<PlaidClient["exchangePublicToken"]>(),
+    getWebhookVerificationKey: vi.fn<PlaidClient["getWebhookVerificationKey"]>(),
     getItemAccounts: vi.fn<PlaidClient["getItemAccounts"]>(),
+    syncTransactions: vi.fn<PlaidClient["syncTransactions"]>(),
   };
 }
 

@@ -202,6 +202,247 @@ describe("Plaid HTTP adapter", () => {
     });
   });
 
+  it("loads an exact ES256 webhook verification key without credentials in the body", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        key: {
+          alg: "ES256",
+          created_at: 1_700_000_000,
+          crv: "P-256",
+          expired_at: null,
+          kid: "verification-key-1",
+          kty: "EC",
+          use: "sig",
+          x: "A".repeat(43),
+          y: "B".repeat(43),
+        },
+        request_id: "plaid-request-id",
+      }),
+    );
+    const client = createPlaidClient({
+      clientId: "client-id-private",
+      environment: "sandbox",
+      fetcher,
+      secret: "secret-private",
+    });
+
+    await expect(client.getWebhookVerificationKey("verification-key-1")).resolves.toEqual({
+      createdAt: 1_700_000_000,
+      expiredAt: null,
+      jwk: {
+        alg: "ES256",
+        crv: "P-256",
+        kid: "verification-key-1",
+        kty: "EC",
+        use: "sig",
+        x: "A".repeat(43),
+        y: "B".repeat(43),
+      },
+    });
+    expect(fetcher.mock.calls[0]?.[0]).toBe(
+      "https://sandbox.plaid.com/webhook_verification_key/get",
+    );
+    expect(JSON.parse(fetcher.mock.calls[0]?.[1]?.body as string)).toEqual({
+      key_id: "verification-key-1",
+    });
+  });
+
+  it.each([
+    { keyId: "", payload: {} },
+    { keyId: "verification-key-1", payload: null },
+    { keyId: "verification-key-1", payload: { key: null, request_id: "request" } },
+    {
+      keyId: "verification-key-1",
+      payload: {
+        key: {
+          alg: "RS256",
+          created_at: 1,
+          crv: "P-256",
+          expired_at: null,
+          kid: "verification-key-1",
+          kty: "EC",
+          use: "sig",
+          x: "A".repeat(43),
+          y: "B".repeat(43),
+        },
+        request_id: "request",
+      },
+    },
+  ])(
+    "rejects malformed webhook verification key input or output %#",
+    async ({ keyId, payload }) => {
+      const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json(payload));
+      const client = createPlaidClient({
+        clientId: "client-id-private",
+        environment: "sandbox",
+        fetcher,
+        secret: "secret-private",
+      });
+
+      await expect(client.getWebhookVerificationKey(keyId)).rejects.toBeInstanceOf(
+        PlaidAdapterError,
+      );
+      if (keyId.length === 0) expect(fetcher).not.toHaveBeenCalled();
+    },
+  );
+
+  it("requests and allowlist-parses one transactions sync page", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        added: [
+          {
+            account_id: "plaid-account-1",
+            amount: -123.45,
+            authorized_date: "2026-07-14",
+            date: "2026-07-15",
+            ignored_sensitive_field: "must-not-cross-the-adapter",
+            iso_currency_code: "CAD",
+            merchant_name: "Fixture Employer",
+            name: "Payroll",
+            payment_meta: {
+              payee: null,
+              payer: "Fixture Employer",
+              payment_method: "ACH",
+              reference_number: "reference-1",
+            },
+            pending: false,
+            pending_transaction_id: null,
+            transaction_id: "plaid-transaction-1",
+          },
+        ],
+        has_more: false,
+        modified: [],
+        next_cursor: "cursor-next",
+        removed: [],
+        request_id: "plaid-request-id",
+      }),
+    );
+    const client = createPlaidClient({
+      clientId: "client-id-private",
+      environment: "sandbox",
+      fetcher,
+      secret: "secret-private",
+    });
+
+    const result = await client.syncTransactions({
+      accessToken: "access-token-private",
+      cursor: null,
+    });
+    expect(result).toMatchObject({
+      hasMore: false,
+      modified: [],
+      nextCursor: "cursor-next",
+      removed: [],
+    });
+    expect(result.added).toHaveLength(1);
+    expect(result.added[0]).toMatchObject({
+      accountId: "plaid-account-1",
+      amount: -123.45,
+      transactionId: "plaid-transaction-1",
+    });
+    expect(result.added[0]?.paymentMetadata.payer).toBe("Fixture Employer");
+    const [url, init] = fetcher.mock.calls[0]!;
+    expect(url).toBe("https://sandbox.plaid.com/transactions/sync");
+    expect(JSON.parse(init?.body as string)).toEqual({
+      access_token: "access-token-private",
+      count: 500,
+    });
+    expect(JSON.stringify(result)).not.toContain("must-not-cross");
+  });
+
+  it("maps Plaid's pagination mutation error without exposing its response", async () => {
+    const client = createPlaidClient({
+      clientId: "client-id-private",
+      environment: "sandbox",
+      fetcher: vi.fn<typeof fetch>().mockResolvedValue(
+        Response.json(
+          {
+            error_code: "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION",
+            error_message: "private upstream detail",
+            request_id: "plaid-request-id",
+          },
+          { status: 400 },
+        ),
+      ),
+      secret: "secret-private",
+    });
+
+    const operation = client.syncTransactions({
+      accessToken: "access-token-private",
+      cursor: "cursor-previous",
+    });
+
+    await expect(operation).rejects.toEqual(
+      new PlaidAdapterError("TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION"),
+    );
+    await expect(operation).rejects.not.toThrow(/private upstream detail/);
+  });
+
+  it("maps ITEM_LOGIN_REQUIRED to the stable update-mode signal", async () => {
+    const client = createPlaidClient({
+      clientId: "client-id-private",
+      environment: "sandbox",
+      fetcher: vi.fn<typeof fetch>().mockResolvedValue(
+        Response.json(
+          {
+            error_code: "ITEM_LOGIN_REQUIRED",
+            error_message: "private upstream detail",
+            error_type: "ITEM_ERROR",
+            request_id: "plaid-request-id",
+          },
+          { status: 400 },
+        ),
+      ),
+      secret: "secret-private",
+    });
+
+    const operation = client.syncTransactions({
+      accessToken: "access-token-private",
+      cursor: "cursor-previous",
+    });
+
+    await expect(operation).rejects.toEqual(new PlaidAdapterError("ITEM_LOGIN_REQUIRED"));
+    await expect(operation).rejects.not.toThrow(/private upstream detail/);
+  });
+
+  it.each([
+    { accessToken: "", cursor: null },
+    { accessToken: "access-token-private", cursor: "" },
+    { accessToken: "access-token-private", cursor: "x".repeat(257) },
+  ])("rejects invalid transactions sync input before fetching", async (input) => {
+    const fetcher = vi.fn<typeof fetch>();
+    const client = createPlaidClient({
+      clientId: "client-id-private",
+      environment: "sandbox",
+      fetcher,
+      secret: "secret-private",
+    });
+
+    await expect(client.syncTransactions(input)).rejects.toEqual(
+      new PlaidAdapterError("INVALID_CONFIGURATION"),
+    );
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    Response.json(
+      { error_code: "ANOTHER_ERROR", error_message: "private detail" },
+      { status: 400 },
+    ),
+    Response.json({ added: [], request_id: "malformed-page" }),
+  ])("sanitizes non-restartable sync failures", async (response) => {
+    const client = createPlaidClient({
+      clientId: "client-id-private",
+      environment: "sandbox",
+      fetcher: vi.fn<typeof fetch>().mockResolvedValue(response),
+      secret: "secret-private",
+    });
+
+    await expect(
+      client.syncTransactions({ accessToken: "access-token-private", cursor: null }),
+    ).rejects.toEqual(new PlaidAdapterError("UPSTREAM_UNAVAILABLE"));
+  });
+
   it.each([
     new Response("private upstream failure", { status: 500 }),
     Response.json({ link_token: "missing-expiration", request_id: "request" }),

@@ -11,6 +11,9 @@
     "typecheck": "tsc --build"
   },
   "dependencies": {
-    "@ledger/domain": "0.0.0"
+    "@ledger/domain": "0.0.0",
+    "@ledger/persistence": "0.0.0",
+    "@ledger/plaid": "0.0.0",
+    "jose": "6.2.3"
   }
 }

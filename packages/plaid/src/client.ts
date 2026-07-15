@@ -4,15 +4,21 @@ import {
   type InitialLinkTokenInput,
   type UpdateLinkTokenInput,
 } from "./link-token";
+import { parseTransactionSyncResponse, type PlaidTransactionSyncPage } from "./transactions";
 
 const PLAID_ORIGINS = {
   production: "https://production.plaid.com",
   sandbox: "https://sandbox.plaid.com",
 } as const;
 const MAXIMUM_RESPONSE_BYTES = 64 * 1024;
+const MAXIMUM_SYNC_RESPONSE_BYTES = 2 * 1024 * 1024;
 
 export type PlaidEnvironment = keyof typeof PLAID_ORIGINS;
-export type PlaidAdapterErrorCode = "INVALID_CONFIGURATION" | "UPSTREAM_UNAVAILABLE";
+export type PlaidAdapterErrorCode =
+  | "INVALID_CONFIGURATION"
+  | "ITEM_LOGIN_REQUIRED"
+  | "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION"
+  | "UPSTREAM_UNAVAILABLE";
 
 export class PlaidAdapterError extends Error {
   constructor(readonly code: PlaidAdapterErrorCode) {
@@ -54,11 +60,32 @@ export interface PlaidItemAccounts {
   itemId: string;
 }
 
+export interface PlaidWebhookJwk {
+  alg: "ES256";
+  crv: "P-256";
+  kid: string;
+  kty: "EC";
+  use: "sig";
+  x: string;
+  y: string;
+}
+
+export interface PlaidWebhookVerificationKey {
+  createdAt: number;
+  expiredAt: number | null;
+  jwk: PlaidWebhookJwk;
+}
+
 export interface PlaidClient {
   createInitialLinkToken(input: InitialLinkTokenInput): Promise<InitialLinkToken>;
   createUpdateLinkToken(input: UpdateLinkTokenInput): Promise<InitialLinkToken>;
   exchangePublicToken(publicToken: string): Promise<ExchangedPlaidItem>;
+  getWebhookVerificationKey(keyId: string): Promise<PlaidWebhookVerificationKey>;
   getItemAccounts(accessToken: string): Promise<PlaidItemAccounts>;
+  syncTransactions(input: {
+    accessToken: string;
+    cursor: string | null;
+  }): Promise<PlaidTransactionSyncPage>;
 }
 
 function isValidUpdateLinkInput(input: UpdateLinkTokenInput): boolean {
@@ -92,9 +119,9 @@ function isValidInitialLinkInput(input: InitialLinkTokenInput): boolean {
   }
 }
 
-async function readBoundedResponse(response: Response): Promise<string> {
+async function readBoundedResponse(response: Response, maximumBytes: number): Promise<string> {
   const contentLength = response.headers.get("Content-Length");
-  if (contentLength !== null && Number(contentLength) > MAXIMUM_RESPONSE_BYTES) {
+  if (contentLength !== null && Number(contentLength) > maximumBytes) {
     throw new PlaidAdapterError("UPSTREAM_UNAVAILABLE");
   }
   if (!response.body) return "";
@@ -107,7 +134,7 @@ async function readBoundedResponse(response: Response): Promise<string> {
       const { done, value } = await reader.read();
       if (done) break;
       total += value.byteLength;
-      if (total > MAXIMUM_RESPONSE_BYTES) {
+      if (total > maximumBytes) {
         await reader.cancel();
         throw new PlaidAdapterError("UPSTREAM_UNAVAILABLE");
       }
@@ -228,6 +255,55 @@ function parseItemAccountsResponse(value: unknown): PlaidItemAccounts | undefine
   };
 }
 
+function parseWebhookVerificationKeyResponse(
+  value: unknown,
+  expectedKeyId: string,
+): PlaidWebhookVerificationKey | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.key !== "object" ||
+    record.key === null ||
+    Array.isArray(record.key) ||
+    !isNonEmptyBoundedString(record.request_id, 256)
+  ) {
+    return undefined;
+  }
+
+  const key = record.key as Record<string, unknown>;
+  const validCoordinate = (coordinate: unknown) =>
+    typeof coordinate === "string" && /^[A-Za-z0-9_-]{43}$/.test(coordinate);
+  if (
+    key.alg !== "ES256" ||
+    key.crv !== "P-256" ||
+    key.kid !== expectedKeyId ||
+    key.kty !== "EC" ||
+    key.use !== "sig" ||
+    !validCoordinate(key.x) ||
+    !validCoordinate(key.y) ||
+    !Number.isInteger(key.created_at) ||
+    (key.created_at as number) < 0 ||
+    (key.expired_at !== null &&
+      (!Number.isInteger(key.expired_at) || (key.expired_at as number) < 0))
+  ) {
+    return undefined;
+  }
+
+  return {
+    createdAt: key.created_at as number,
+    expiredAt: key.expired_at as number | null,
+    jwk: {
+      alg: "ES256",
+      crv: "P-256",
+      kid: expectedKeyId,
+      kty: "EC",
+      use: "sig",
+      x: key.x as string,
+      y: key.y as string,
+    },
+  };
+}
+
 export function createPlaidClient({
   clientId,
   environment,
@@ -243,7 +319,11 @@ export function createPlaidClient({
   }
   const origin = PLAID_ORIGINS[environment];
 
-  async function postJson(path: string, body: object): Promise<unknown> {
+  async function postJson(
+    path: string,
+    body: object,
+    maximumResponseBytes = MAXIMUM_RESPONSE_BYTES,
+  ): Promise<unknown> {
     let response: Response;
     try {
       response = await fetcher(`${origin}${path}`, {
@@ -259,10 +339,25 @@ export function createPlaidClient({
       throw new PlaidAdapterError("UPSTREAM_UNAVAILABLE");
     }
 
-    if (!response.ok) throw new PlaidAdapterError("UPSTREAM_UNAVAILABLE");
-
     try {
-      return JSON.parse(await readBoundedResponse(response));
+      const parsed: unknown = JSON.parse(await readBoundedResponse(response, maximumResponseBytes));
+      if (!response.ok) {
+        const errorCode =
+          typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+            ? (parsed as Record<string, unknown>).error_code
+            : undefined;
+        if (path === "/transactions/sync" && errorCode === "ITEM_LOGIN_REQUIRED") {
+          throw new PlaidAdapterError("ITEM_LOGIN_REQUIRED");
+        }
+        if (
+          path === "/transactions/sync" &&
+          errorCode === "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION"
+        ) {
+          throw new PlaidAdapterError("TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION");
+        }
+        throw new PlaidAdapterError("UPSTREAM_UNAVAILABLE");
+      }
+      return parsed;
     } catch (error) {
       if (error instanceof PlaidAdapterError) throw error;
       throw new PlaidAdapterError("UPSTREAM_UNAVAILABLE");
@@ -302,12 +397,44 @@ export function createPlaidClient({
       if (!parsed) throw new PlaidAdapterError("UPSTREAM_UNAVAILABLE");
       return parsed;
     },
+    async getWebhookVerificationKey(keyId) {
+      if (!isNonEmptyBoundedString(keyId, 256)) {
+        throw new PlaidAdapterError("INVALID_CONFIGURATION");
+      }
+      const parsed = parseWebhookVerificationKeyResponse(
+        await postJson("/webhook_verification_key/get", { key_id: keyId }),
+        keyId,
+      );
+      if (!parsed) throw new PlaidAdapterError("UPSTREAM_UNAVAILABLE");
+      return parsed;
+    },
     async getItemAccounts(accessToken) {
       if (!isNonEmptyBoundedString(accessToken, 2048)) {
         throw new PlaidAdapterError("INVALID_CONFIGURATION");
       }
       const parsed = parseItemAccountsResponse(
         await postJson("/accounts/get", { access_token: accessToken }),
+      );
+      if (!parsed) throw new PlaidAdapterError("UPSTREAM_UNAVAILABLE");
+      return parsed;
+    },
+    async syncTransactions({ accessToken, cursor }) {
+      if (
+        !isNonEmptyBoundedString(accessToken, 2048) ||
+        (cursor !== null && !isNonEmptyBoundedString(cursor, 256))
+      ) {
+        throw new PlaidAdapterError("INVALID_CONFIGURATION");
+      }
+      const parsed = parseTransactionSyncResponse(
+        await postJson(
+          "/transactions/sync",
+          {
+            access_token: accessToken,
+            count: 500,
+            ...(cursor === null ? {} : { cursor }),
+          },
+          MAXIMUM_SYNC_RESPONSE_BYTES,
+        ),
       );
       if (!parsed) throw new PlaidAdapterError("UPSTREAM_UNAVAILABLE");
       return parsed;

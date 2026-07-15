@@ -3,6 +3,8 @@ import { CONNECTION_STATUSES } from "@ledger/domain";
 import type { EncryptedPlaidAccessToken } from "@ledger/domain/token-crypto";
 import * as z from "zod";
 
+import { TransactionSyncRepository } from "./transaction-sync";
+
 const identifierSchema = z.string().min(1).max(160);
 
 const transactionSortSchema = z.enum([
@@ -403,6 +405,7 @@ export interface Repositories {
   accounts: AccountRepository;
   connections: ConnectionRepository;
   transactions: TransactionRepository;
+  transactionSync: TransactionSyncRepository;
 }
 
 export function createRepositories(database: D1Database): Repositories {
@@ -410,5 +413,6 @@ export function createRepositories(database: D1Database): Repositories {
     accounts: new AccountRepository(database),
     connections: new ConnectionRepository(database),
     transactions: new TransactionRepository(database),
+    transactionSync: new TransactionSyncRepository(database),
   };
 }

@@ -126,7 +126,7 @@ Plaid Trial 当前按 Item 限制连接数量，而且删除 Item 不返还名�
 
 Webhook 处理器只做验签、最小 schema 解析、幂等写入 `sync_events` 并快速返回；重复和乱序事件不得重复创建交易。scheduled handler 每 30 分钟扫描需要同步、上次失败或长时间未成功的 Item，补偿漏掉的 webhook。重试采用指数退避和上限，不进行无限热循环。
 
-用户点击“立即同步”时，受保护的应用 Worker 触发同一同步服务并返回进度/最新状态；同一 Item 同一时刻最多一个 lease，有并发请求时返回已有任务。若执行预算不足，任务保留为 pending，由下一次 scheduled run 接续。
+用户点击“立即同步”时，受保护的应用 Worker 先创建或复用幂等 sync run，再通过仅 Worker 间可访问的 `SyncService` RPC entrypoint 异步触发同一 TypeScript 同步执行器并返回进度/最新状态；RPC 只接收 connection/run 标识，不传 access token、lease token 或异常细节。同一 Item 同一时刻最多一个 lease，有并发请求时返回已有任务。若即时分发失败或执行预算不足，任务保留为 pending，由下一次 scheduled run 接续。
 
 连接遇到 `ITEM_LOGIN_REQUIRED`、同意到期或账户选择变化时，状态变为 `ACTION_REQUIRED`，界面生成 update-mode Link token。update mode 成功后继续使用原 Item/access token，不做重复 public-token exchange。
 
@@ -146,6 +146,7 @@ Webhook 处理器只做验签、最小 schema 解析、幂等写入 `sync_events
 | `category_audits` | transaction、old/new category/source/rule、reason、changed at；append-only |
 | `transfer_matches` | debit transaction、credit transaction、confidence、decision source、status、timestamps；一笔交易最多一个 active match |
 | `sync_events` | event hash、item、type、minimal payload、status、received/processed、error code；event hash 唯一 |
+| `sync_run_requests` | connection、手工请求 idempotency key、复用的 sync run、创建时间；每个 connection/key 唯一，允许多个 key 映射到同一 active run |
 | `import_batches` | source filename hash、content checksum、row counts、status、timestamps；原始文件不永久保存 |
 
 `transactions.source` 为 `PLAID`、`MANUAL` 或 `CSV`；`status` 为 `PENDING`、`POSTED` 或 `REMOVED`。手工交易使用同一模型，但没有 Plaid id。所有更新使用 `version` 或 `updated_at` 做 optimistic concurrency，避免两个设备互相覆盖。

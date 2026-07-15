@@ -119,7 +119,10 @@ const EXPECTED_COLUMNS = {
     "started_at",
     "finished_at",
     "version",
+    "lease_token",
+    "next_attempt_at",
   ],
+  sync_run_requests: ["connection_id", "idempotency_key", "run_id", "created_at"],
   transactions: [
     "id",
     "source",
@@ -173,6 +176,7 @@ beforeEach(async () => {
       "transfer_matches",
       "category_audits",
       "sync_events",
+      "sync_run_requests",
       "sync_runs",
       "transactions",
       "merchant_rules",

@@ -27,6 +27,12 @@ const encryptionKeySchema = z
   .refine((value) => !value.startsWith("REPLACE_ME_"), "Secret placeholder must be replaced");
 
 const plaidInstitutionIdSchema = z.string().regex(/^ins_[A-Za-z0-9]+$/);
+const boundedIntegerString = (minimum: number, maximum: number) =>
+  z
+    .string()
+    .regex(/^[1-9][0-9]*$/)
+    .transform(Number)
+    .pipe(z.int().min(minimum).max(maximum));
 
 const sharedWorkerEnvShape = {
   APP_TIMEZONE: z.literal("America/Toronto"),
@@ -70,7 +76,18 @@ export const appWorkerEnvSchema = z.object({
   }, "Expected the public HTTPS Plaid webhook URL"),
 });
 
-export const syncWorkerEnvSchema = z.object(sharedWorkerEnvShape);
+export const syncWorkerEnvSchema = z
+  .object({
+    ...sharedWorkerEnvShape,
+    SCHEDULED_SYNC_MAX_ITEMS: boundedIntegerString(1, 10),
+    SCHEDULED_SYNC_MAX_PAGES: boundedIntegerString(1, 20),
+    SCHEDULED_SYNC_MAX_RUNTIME_MS: boundedIntegerString(1_000, 120_000),
+    SYNC_STALE_AFTER_MINUTES: boundedIntegerString(60, 1_440),
+  })
+  .refine((config) => config.SCHEDULED_SYNC_MAX_ITEMS * config.SCHEDULED_SYNC_MAX_PAGES <= 40, {
+    message: "Scheduled Item and page caps exceed the free-plan subrequest budget",
+    path: ["SCHEDULED_SYNC_MAX_PAGES"],
+  });
 
 export type AppWorkerEnv = z.infer<typeof appWorkerEnvSchema>;
 export type PublicClientEnv = z.infer<typeof publicClientEnvSchema>;

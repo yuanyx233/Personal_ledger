@@ -14,6 +14,13 @@ const fakeSharedSecrets = {
   PLAID_TOKEN_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
 };
 
+const fakeSyncLimits = {
+  SCHEDULED_SYNC_MAX_ITEMS: "2",
+  SCHEDULED_SYNC_MAX_PAGES: "20",
+  SCHEDULED_SYNC_MAX_RUNTIME_MS: "20000",
+  SYNC_STALE_AFTER_MINUTES: "60",
+};
+
 describe("environment boundaries", () => {
   it("accepts only the checked-in public client configuration", () => {
     expect(
@@ -57,6 +64,7 @@ describe("environment boundaries", () => {
     expect(
       syncWorkerEnvSchema.safeParse({
         ...fakeSharedSecrets,
+        ...fakeSyncLimits,
         APP_TIMEZONE: "America/Toronto",
         PLAID_ENV: "sandbox",
       }).success,
@@ -67,9 +75,44 @@ describe("environment boundaries", () => {
     expect(
       syncWorkerEnvSchema.safeParse({
         ...fakeSharedSecrets,
+        ...fakeSyncLimits,
         APP_TIMEZONE: "America/Toronto",
         PLAID_ENV: "sandbox",
         PLAID_SECRET: "REPLACE_ME_PLAID_SECRET",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("normalizes bounded public scheduled-sync work caps", () => {
+    expect(
+      syncWorkerEnvSchema.parse({
+        ...fakeSharedSecrets,
+        ...fakeSyncLimits,
+        APP_TIMEZONE: "America/Toronto",
+        PLAID_ENV: "sandbox",
+      }),
+    ).toMatchObject({
+      SCHEDULED_SYNC_MAX_ITEMS: 2,
+      SCHEDULED_SYNC_MAX_PAGES: 20,
+      SCHEDULED_SYNC_MAX_RUNTIME_MS: 20_000,
+      SYNC_STALE_AFTER_MINUTES: 60,
+    });
+    expect(
+      syncWorkerEnvSchema.safeParse({
+        ...fakeSharedSecrets,
+        ...fakeSyncLimits,
+        APP_TIMEZONE: "America/Toronto",
+        PLAID_ENV: "sandbox",
+        SYNC_STALE_AFTER_MINUTES: "59",
+      }).success,
+    ).toBe(false);
+    expect(
+      syncWorkerEnvSchema.safeParse({
+        ...fakeSharedSecrets,
+        ...fakeSyncLimits,
+        APP_TIMEZONE: "America/Toronto",
+        PLAID_ENV: "sandbox",
+        SCHEDULED_SYNC_MAX_ITEMS: "3",
       }).success,
     ).toBe(false);
   });

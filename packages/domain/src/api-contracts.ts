@@ -129,6 +129,52 @@ export const publicTokenExchangeRequestSchema = z.strictObject({
   publicToken: z.string().min(1).max(2048),
 });
 
+export const connectionIdSchema = z
+  .string()
+  .regex(/^connection-[A-Za-z0-9_-]{1,149}$/)
+  .brand<"ConnectionId">();
+
+export const syncRunIdSchema = z
+  .string()
+  .regex(/^sync-run-[A-Za-z0-9_-]{1,151}$/)
+  .brand<"SyncRunId">();
+
+export const syncRunCreateRequestSchema = z.strictObject({
+  connectionId: connectionIdSchema,
+});
+
+export const syncRunDispatchInputSchema = z.strictObject({
+  connectionId: connectionIdSchema,
+  runId: syncRunIdSchema,
+});
+
+export const syncRunReadModelSchema = z.strictObject({
+  attemptCount: z.int().nonnegative(),
+  connectionId: connectionIdSchema,
+  createdAt: z.iso.datetime({ offset: true }),
+  finishedAt: z.iso.datetime({ offset: true }).nullable(),
+  id: syncRunIdSchema,
+  lastErrorCode: z
+    .string()
+    .regex(/^[A-Z][A-Z0-9_]{0,63}$/)
+    .nullable(),
+  nextAttemptAt: z.iso.datetime({ offset: true }).nullable(),
+  startedAt: z.iso.datetime({ offset: true }).nullable(),
+  status: z.enum(["QUEUED", "RUNNING", "RETRY_WAIT", "SUCCEEDED", "FAILED", "PAUSED"]),
+  trigger: z.enum(["WEBHOOK", "SCHEDULED", "MANUAL", "INITIAL"]),
+  version: optimisticVersionSchema,
+});
+
+export const syncRunCreateResponseSchema = apiSuccessEnvelopeSchema(
+  z.strictObject({ syncRun: syncRunReadModelSchema }),
+  z.strictObject({ replayed: z.boolean(), reusedActive: z.boolean() }),
+);
+
+export const syncRunStatusResponseSchema = apiSuccessEnvelopeSchema(
+  z.strictObject({ syncRun: syncRunReadModelSchema }),
+  z.strictObject({}),
+);
+
 export const cursorSchema = z.base64url().min(1).max(512).brand<"Cursor">();
 
 const pageSizeQueryValueSchema = z
@@ -254,8 +300,14 @@ export type SessionResponse = z.infer<typeof sessionResponseSchema>;
 export type LinkTokenResponse = z.infer<typeof linkTokenResponseSchema>;
 export type LinkTokenRequest = z.infer<typeof linkTokenRequestSchema>;
 export type ConnectionCreationResponse = z.infer<typeof connectionCreationResponseSchema>;
+export type SyncRunDispatchInput = z.infer<typeof syncRunDispatchInputSchema>;
+export type SyncRunReadModel = z.infer<typeof syncRunReadModelSchema>;
 export type AccountReadModel = z.infer<typeof accountReadModelSchema>;
 export type ConnectionsResponse = z.infer<typeof connectionsResponseSchema>;
 export type CursorPaginationQuery = z.infer<typeof cursorPaginationQuerySchema>;
 export type CursorPaginationMeta = z.infer<typeof cursorPaginationMetaSchema>;
 export type Money = z.infer<typeof moneySchema>;
+
+export interface SyncWorkerService {
+  syncConnection(input: SyncRunDispatchInput): Promise<void>;
+}

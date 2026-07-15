@@ -20,6 +20,10 @@ import {
   moneySchema,
   optimisticVersionSchema,
   sessionResponseSchema,
+  syncRunCreateRequestSchema,
+  syncRunCreateResponseSchema,
+  syncRunDispatchInputSchema,
+  syncRunStatusResponseSchema,
 } from "./api-contracts";
 
 describe("API envelope contracts", () => {
@@ -192,6 +196,51 @@ describe("API envelope contracts", () => {
 });
 
 describe("pagination and concurrency contracts", () => {
+  it("defines strict, secret-free manual sync contracts", () => {
+    expect(syncRunCreateRequestSchema.parse({ connectionId: "connection-rbc-1" })).toEqual({
+      connectionId: "connection-rbc-1",
+    });
+    expect(
+      syncRunCreateRequestSchema.safeParse({
+        connectionId: "connection-rbc-1",
+        leaseToken: "must-not-cross-the-boundary",
+      }).success,
+    ).toBe(false);
+    expect(
+      syncRunDispatchInputSchema.parse({
+        connectionId: "connection-rbc-1",
+        runId: "sync-run-request-1",
+      }),
+    ).toEqual({ connectionId: "connection-rbc-1", runId: "sync-run-request-1" });
+
+    const run = {
+      attemptCount: 0,
+      connectionId: "connection-rbc-1",
+      createdAt: "2026-07-15T12:00:00.000Z",
+      finishedAt: null,
+      id: "sync-run-request-1",
+      lastErrorCode: null,
+      nextAttemptAt: "2026-07-15T12:00:00.000Z",
+      startedAt: null,
+      status: "QUEUED",
+      trigger: "MANUAL",
+      version: 1,
+    } as const;
+    expect(
+      syncRunCreateResponseSchema.parse({
+        data: { syncRun: run },
+        meta: { replayed: false, reusedActive: false },
+      }),
+    ).toBeDefined();
+    expect(syncRunStatusResponseSchema.parse({ data: { syncRun: run }, meta: {} })).toBeDefined();
+    expect(
+      syncRunStatusResponseSchema.safeParse({
+        data: { syncRun: { ...run, leaseToken: "must-not-leak" } },
+        meta: {},
+      }).success,
+    ).toBe(false);
+  });
+
   it("parses bounded cursor pagination query values", () => {
     expect(cursorPaginationQuerySchema.parse({ pageSize: "25" })).toEqual({ pageSize: 25 });
     expect(cursorPaginationQuerySchema.parse({})).toEqual({ pageSize: 50 });
