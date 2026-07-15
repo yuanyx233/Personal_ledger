@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "noEmit": true,
+    "tsBuildInfoFile": "../../node_modules/.cache/web-node.tsbuildinfo",
+    "types": ["node"]
+  },
+  "include": ["vite.browser-test.config.ts", "vite.config.ts", "vitest.config.ts"]
+}

@@ -1,0 +1,10 @@
+declare namespace Cloudflare {
+  interface Env {
+    DB: D1Database;
+    TEST_MIGRATIONS: Array<{ name: string; queries: string[] }>;
+  }
+
+  interface Exports {
+    default: Fetcher;
+  }
+}

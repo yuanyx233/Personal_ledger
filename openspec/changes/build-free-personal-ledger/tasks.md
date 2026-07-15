@@ -1,38 +1,38 @@
 ## 1. Workspace and executable contracts
 
-- [ ] 1.1 Initialize the TypeScript workspace for the React/Vite client, protected app Worker, public sync Worker, and shared domain package with pinned runtime/tool versions.
-- [ ] 1.2 Configure linting, formatting, type checking, unit/integration tests, browser tests, coverage thresholds, and one local verification command.
-- [ ] 1.3 Add checked-in environment schemas and example files that distinguish public configuration, local-only secrets, and production Worker secrets without containing real credentials.
-- [ ] 1.4 Define shared API success/error envelopes, stable error codes, cursor pagination, idempotency-key, optimistic-version, money, date, and currency schemas; add contract tests before handlers.
-- [ ] 1.5 Add fixture factories and a deterministic clock/timezone harness for Plaid, ledger, import, and report test data.
+- [x] 1.1 Initialize the TypeScript workspace for the React/Vite client, protected app Worker, public sync Worker, and shared domain package with pinned runtime/tool versions.
+- [x] 1.2 Configure linting, formatting, type checking, unit/integration tests, browser tests, coverage thresholds, and one local verification command.
+- [x] 1.3 Add checked-in environment schemas and example files that distinguish public configuration, local-only secrets, and production Worker secrets without containing real credentials.
+- [x] 1.4 Define shared API success/error envelopes, stable error codes, cursor pagination, idempotency-key, optimistic-version, money, date, and currency schemas; add contract tests before handlers.
+- [x] 1.5 Add fixture factories and a deterministic clock/timezone harness for Plaid, ledger, import, and report test data.
 
 ## 2. D1 schema and persistence boundaries
 
-- [ ] 2.1 Write failing schema tests for connections, eligible accounts, canonical transactions, pending links, categories, merchant rules, category audits, transfer matches, sync events/runs, and import batches/rows.
-- [ ] 2.2 Create the initial ordered D1 SQL migration with foreign keys, uniqueness constraints, status checks, integer minor-unit checks, timestamps, and optimistic versions.
-- [ ] 2.3 Add indexes for Plaid ids, Item cursors/status, posted-date report scans, transaction filters, normalized merchant rules, review queue, sync leases/events, and import fingerprints; verify query plans for representative ranges.
-- [ ] 2.4 Implement typed persistence repositories using prepared statements only and prove with tests that external filter/sort values cannot become SQL fragments.
-- [ ] 2.5 Implement local migration apply/reset and fixture seed commands, then verify a clean database can be recreated and queried from scratch.
+- [x] 2.1 Write failing schema tests for connections, eligible accounts, canonical transactions, pending links, categories, merchant rules, category audits, transfer matches, sync events/runs, and import batches/rows.
+- [x] 2.2 Create the initial ordered D1 SQL migration with foreign keys, uniqueness constraints, status checks, integer minor-unit checks, timestamps, and optimistic versions.
+- [x] 2.3 Add indexes for Plaid ids, Item cursors/status, posted-date report scans, transaction filters, normalized merchant rules, review queue, sync leases/events, and import fingerprints; verify query plans for representative ranges.
+- [x] 2.4 Implement typed persistence repositories using prepared statements only and prove with tests that external filter/sort values cannot become SQL fragments.
+- [x] 2.5 Implement local migration apply/reset and fixture seed commands, then verify a clean database can be recreated and queried from scratch.
 
 ## 3. Authentication and security foundation
 
-- [ ] 3.1 Write failing request tests for missing, forged, expired, wrong-issuer, wrong-audience, and wrong-email Cloudflare Access assertions.
-- [ ] 3.2 Implement Access JWT verification against the configured JWKS plus the single-owner email allowlist for every app/static/API request.
-- [ ] 3.3 Write and implement same-origin CORS denial, Origin/Fetch-Metadata checks, JSON content-type checks, and session-bound CSRF protection for all browser writes.
-- [ ] 3.4 Add CSP, HSTS, frame denial, MIME-sniffing, referrer policy, and no-store headers for authenticated API/export responses; verify headers in integration tests.
-- [ ] 3.5 Implement AES-256-GCM Plaid-token encryption/decryption with random IV, authenticated context, key versioning, rotation test vectors, and zero token exposure in API responses.
-- [ ] 3.6 Add structured redacted logging and tests that inject token-, account-, merchant-, CSV-, and webhook-like values and confirm none appear in logs/errors.
-- [ ] 3.7 Add per-route body/row/date/page limits and rate limits with stable 413/422/429 responses.
+- [x] 3.1 Write failing request tests for missing, forged, expired, wrong-issuer, wrong-audience, and wrong-email Cloudflare Access assertions.
+- [x] 3.2 Implement Access JWT verification against the configured JWKS plus the single-owner email allowlist for every app/static/API request.
+- [x] 3.3 Write and implement same-origin CORS denial, Origin/Fetch-Metadata checks, JSON content-type checks, and session-bound CSRF protection for all browser writes.
+- [x] 3.4 Add CSP, HSTS, frame denial, MIME-sniffing, referrer policy, and no-store headers for authenticated API/export responses; verify headers in integration tests.
+- [x] 3.5 Implement AES-256-GCM Plaid-token encryption/decryption with random IV, authenticated context, key versioning, rotation test vectors, and zero token exposure in API responses.
+- [x] 3.6 Add structured redacted logging and tests that inject token-, account-, merchant-, CSV-, and webhook-like values and confirm none appear in logs/errors.
+- [x] 3.7 Add per-route body/row/date/page limits and rate limits with stable 413/422/429 responses.
 
 ## 4. Plaid Link and connection lifecycle
 
-- [ ] 4.1 Write Plaid-adapter contract tests for Canada-only Transactions Link configuration, 730-day request, Account Select, and checking/credit-card filters.
-- [ ] 4.2 Implement protected initial Link-token creation without Auth, Identity, Balance, Assets, Statements, or Investments products.
-- [ ] 4.3 Write and implement idempotent public-token exchange that verifies RBC/BMO institution identity, encrypts the access token, and rejects unsupported institutions/accounts.
-- [ ] 4.4 Implement the connection/account read model and owner controls that enable only returned chequing and credit-card accounts.
-- [ ] 4.5 Write and implement update-mode Link-token creation for login required, consent expiry, and account-selection changes without creating/re-exchanging an Item.
-- [ ] 4.6 Add a guarded extra-Item flow that explains the non-reclaimable Plaid Trial limit and requires explicit owner confirmation.
-- [ ] 4.7 Implement sanitized connection health/status mapping, last-success time, consent state, and next-action codes.
+- [x] 4.1 Write Plaid-adapter contract tests for Canada-only Transactions Link configuration, 730-day request, Account Select, and checking/credit-card filters.
+- [x] 4.2 Implement protected initial Link-token creation without Auth, Identity, Balance, Assets, Statements, or Investments products.
+- [x] 4.3 Write and implement idempotent public-token exchange that verifies RBC/BMO institution identity, encrypts the access token, and rejects unsupported institutions/accounts.
+- [x] 4.4 Implement the connection/account read model and owner controls that enable only returned chequing and credit-card accounts.
+- [x] 4.5 Write and implement update-mode Link-token creation for login required, consent expiry, and account-selection changes without creating/re-exchanging an Item.
+- [x] 4.6 Add a guarded extra-Item flow that explains the non-reclaimable Plaid Trial limit and requires explicit owner confirmation.
+- [x] 4.7 Implement sanitized connection health/status mapping, last-success time, consent state, and next-action codes.
 
 ## 5. Incremental sync and webhook processing
 

@@ -105,10 +105,12 @@ Plaid Transactions API <-> RBC / BMO
 - `country_codes: ["CA"]`
 - `transactions.days_requested: 730`
 - 账户过滤仅允许 `depository/checking` 与 `credit/credit card`
-- 启用 Account Select，并要求用户只勾选本产品范围内的账户
+- 初次 Link token 必须传入固定的 `link_customization_name`；对应 Plaid Dashboard customization 必须启用 Account Select，并要求用户只勾选本产品范围内的账户。代码锁定 customization 名称，实际 pane 配置在 Sandbox/部署验证中确认
 - 在同步响应中保留 `original_description`（如果机构提供）
 
 不申请 Auth、Identity、Balance、Assets、Statements 或 Investments。Plaid Link 负责收集银行凭据和 MFA；本应用只接收短期 `public_token`，服务端立即交换为 `access_token` 并加密保存。
+
+机构身份以 Plaid Item 返回的大小写敏感 `institution_id` 与环境中分别配置的 RBC/BMO 精确 allowlist 比对，不依赖可变化的显示名称。仓库内只保留安全失败的占位值；Sandbox 与后续获授权的 Production 阶段必须分别确认并替换对应 ID，两个 ID 不得相同。账户响应再次过滤，只持久化 `depository/checking` 与 `credit/credit card` 且具有三位 ISO currency 的账户；其他账户不写入 D1，若没有任何合规账户则拒绝该 Item。
 
 Plaid Trial 当前按 Item 限制连接数量，而且删除 Item 不返还名额。因此连接页在创建前说明成本：同一机构断连或账户选择变化优先使用 update mode；不能通过“删除后重连”当作普通修复流程。RBC/BMO 各自默认只允许一个 active Item；额外连接必须明确确认。
 
@@ -246,7 +248,9 @@ API 使用版本化 same-origin REST 路由 `/api/v1`。成功响应统一为 `{
 | `GET /api/v1/exports/transactions.csv` | 下载当前筛选交易 |
 | `GET /api/v1/exports/data.json` | 下载完整可迁移数据 |
 
-列表默认按 `posted_date DESC, id DESC`，使用 opaque cursor；限制 page size 和最大日期范围。过滤/排序字段必须 allowlist。创建连接、触发同步和提交 import 使用 idempotency key。写冲突返回 409 并带当前 version，校验失败返回 422，限流返回 429，第三方暂时失败返回稳定的 503 错误码。
+列表默认按 `posted_date DESC, id DESC`，使用 opaque cursor；page size 最大 100，含首尾日期的查询范围最大 730 天。过滤/排序字段必须 allowlist。普通 JSON 请求体最大 64 KiB；CSV preview 最大 5 MiB、10,000 行和 32 列；Plaid webhook 最大 256 KiB。创建连接、触发同步和提交 import 使用 idempotency key。连接交换只保存 public token 的 SHA-256 指纹和请求状态；不保存 public token，最终 connection 以唯一 idempotency key 关联请求，重复成功请求返回原结果，并发或 key/payload 冲突返回 409。写冲突返回 409 并带当前 version，校验失败返回 422，超出 body 上限返回 413，限流返回 429，第三方暂时失败返回稳定的 503 错误码。
+
+应用 API 使用 Cloudflare Rate Limiting binding，按 Access session 与资源路由组合键在每个 Cloudflare location 限制为 60 次/分钟；公开 Plaid webhook 使用独立 binding，限制为 120 次/分钟/location。该 binding 是最终一致、按 location 的滥用缓解层，不承担精确计数、计费或幂等语义；`429` 响应带稳定错误码和 `Retry-After: 60`。
 
 ### 11. Import, export, and retention
 

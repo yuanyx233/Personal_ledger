@@ -1,0 +1,56 @@
+{
+  "name": "personal-ledger",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@11.11.1",
+  "engines": {
+    "node": "24.17.0",
+    "npm": "11.11.1"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "workers/*"
+  ],
+  "scripts": {
+    "build": "npm run build:packages && npm run build --workspace @ledger/sync-worker && npm run build --workspace @ledger/web",
+    "build:packages": "npm run build --workspace @ledger/domain && npm run build --workspace @ledger/persistence && npm run build --workspace @ledger/plaid",
+    "db:migrate": "wrangler d1 migrations apply DB --local --persist-to .wrangler/local-d1 --config apps/web/wrangler.jsonc",
+    "db:recreate": "npm run db:reset && npm run db:migrate && npm run db:seed && npm run db:verify",
+    "db:reset": "node scripts/reset-local-db.mjs",
+    "db:seed": "wrangler d1 execute DB --local --persist-to .wrangler/local-d1 --config apps/web/wrangler.jsonc --file fixtures/local-seed.sql --yes",
+    "db:verify": "node scripts/verify-local-db.mjs",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check",
+    "lint": "eslint . --max-warnings 0",
+    "test": "npm run test:unit && npm run test:integration",
+    "test:browser": "playwright test",
+    "pretest:coverage": "npm run build:packages",
+    "test:coverage": "vitest run --coverage --config vitest.unit.config.ts && npm run test:coverage --workspace @ledger/web && npm run test:coverage --workspace @ledger/sync-worker",
+    "pretest:integration": "npm run build:packages",
+    "test:integration": "npm run test:integration --workspace @ledger/web && npm run test:integration --workspace @ledger/sync-worker",
+    "pretest:unit": "npm run build --workspace @ledger/domain",
+    "test:unit": "vitest run --config vitest.unit.config.ts",
+    "typecheck": "tsc --project tsconfig.json --noEmit && npm run typecheck --workspaces --if-present",
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test:coverage && npm run test:browser && npm run build"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.18.4",
+    "@cloudflare/workers-types": "5.20260715.1",
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.61.1",
+    "@types/node": "24.13.3",
+    "@vitest/coverage-istanbul": "4.1.10",
+    "@vitest/coverage-v8": "4.1.10",
+    "eslint": "10.7.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "eslint-plugin-react-refresh": "0.5.3",
+    "globals": "17.7.0",
+    "prettier": "3.9.5",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.64.0",
+    "vitest": "4.1.10",
+    "wrangler": "4.110.0"
+  }
+}

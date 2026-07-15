@@ -1,0 +1,16 @@
+{
+  "name": "@ledger/sync-worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "dev": "wrangler dev",
+    "test:coverage": "vitest run --coverage --config vitest.config.ts",
+    "test:integration": "vitest run --config vitest.config.ts",
+    "typecheck": "tsc --build"
+  },
+  "dependencies": {
+    "@ledger/domain": "0.0.0"
+  }
+}

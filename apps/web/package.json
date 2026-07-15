@@ -1,0 +1,30 @@
+{
+  "name": "@ledger/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --build && vite build",
+    "dev": "vite",
+    "dev:browser-test": "vite --config vite.browser-test.config.ts",
+    "preview": "vite preview",
+    "test:coverage": "vitest run --coverage --config vitest.config.ts",
+    "test:integration": "vitest run --config vitest.config.ts",
+    "typecheck": "tsc --build"
+  },
+  "dependencies": {
+    "@ledger/domain": "0.0.0",
+    "@ledger/persistence": "0.0.0",
+    "@ledger/plaid": "0.0.0",
+    "jose": "6.2.3",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "1.44.0",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.3",
+    "vite": "8.1.4"
+  }
+}
