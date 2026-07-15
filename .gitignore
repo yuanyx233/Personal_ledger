@@ -216,3 +216,42 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# macOS and editor-local files
+.DS_Store
+*.swp
+*.swo
+
+# Node.js / Vite / test output
+node_modules/
+coverage/
+.vite/
+*.tsbuildinfo
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local environment files and private keys
+.env.*
+!.env.example
+!.env.*.example
+.dev.vars
+.dev.vars.*
+*.pem
+*.key
+*.p12
+
+# Cloudflare local runtime and D1 state
+.wrangler/
+
+# Personal financial data, imports, exports, and backups
+data/private/
+imports/private/
+exports/
+backups/
+*.ledger-export.json
+*.ledger-export.csv
+*.local.sqlite
+*.local.sqlite3
+*.local.db
