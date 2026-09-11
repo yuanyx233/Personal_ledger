@@ -1,10 +1,47 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
-test("renders the local workspace shell without horizontal overflow", async ({ page }) => {
+import { mockEmptyOverviewApi } from "./support/empty-overview-api";
+
+const browserProblems = new WeakMap<Page, string[]>();
+
+test.beforeEach(async ({ page }) => {
+  const problems: string[] = [];
+  browserProblems.set(page, problems);
+  page.on("console", (message) => {
+    if (message.type() === "error" || message.type() === "warning") {
+      problems.push(`${message.type()}: ${message.text()}`);
+    }
+  });
+  page.on("pageerror", (error) => problems.push(`pageerror: ${error.message}`));
+  await mockEmptyOverviewApi(page);
+});
+
+test.afterEach(({ page }) => {
+  expect(browserProblems.get(page)).toEqual([]);
+});
+
+test("renders the responsive app shell without horizontal overflow", async ({ page }, testInfo) => {
   await page.goto("/");
 
   await expect(page).toHaveTitle("Personal Ledger");
-  await expect(page.getByRole("heading", { level: 1, name: "Personal Ledger" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "概览" })).toBeVisible();
+
+  const desktopNavigation = page.locator('[data-navigation="sidebar"]');
+  const mobileNavigation = page.locator('[data-navigation="bottom"]');
+  if (testInfo.project.name === "chromium-mobile") {
+    await expect(desktopNavigation).toBeHidden();
+    await expect(mobileNavigation).toBeVisible();
+  } else {
+    await expect(desktopNavigation).toBeVisible();
+    await expect(mobileNavigation).toBeHidden();
+  }
+
+  const visibleTargets = page.getByRole("navigation", { name: "主导航" }).getByRole("link");
+  await expect(visibleTargets).toHaveCount(5);
+  for (const target of await visibleTargets.all()) {
+    const box = await target.boundingBox();
+    expect(box?.height).toBeGreaterThanOrEqual(44);
+  }
 
   const widths = await page.evaluate(() => ({
     client: document.documentElement.clientWidth,
@@ -12,4 +49,109 @@ test("renders the local workspace shell without horizontal overflow", async ({ p
   }));
 
   expect(widths.scroll).toBe(widths.client);
+});
+
+test("navigates among the five primary routes with URL and current-page semantics", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const navigation = page.getByRole("navigation", { name: "主导航" });
+
+  await expect(navigation.getByRole("link", { name: "概览" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await navigation.getByRole("link", { name: "交易" }).click();
+  await expect(page).toHaveURL(/\/transactions$/);
+  await expect(page.getByRole("heading", { level: 1, name: "交易" })).toBeVisible();
+  await expect(navigation.getByRole("link", { name: "交易" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+
+  await navigation.getByRole("link", { name: "记一笔" }).click();
+  await expect(page).toHaveURL(/\/add$/);
+  await expect(page.getByRole("heading", { level: 1, name: "记一笔" })).toBeVisible();
+
+  await navigation.getByRole("link", { name: "分析" }).click();
+  await expect(page).toHaveURL(/\/analysis$/);
+  await expect(page.getByRole("heading", { level: 1, name: "分析" })).toBeVisible();
+
+  await page.goBack();
+  await expect(page.getByRole("heading", { level: 1, name: "记一笔" })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("heading", { level: 1, name: "交易" })).toBeVisible();
+
+  await page.goto("/settings");
+  await expect(page.getByRole("heading", { level: 1, name: "设置" })).toBeVisible();
+  await expect(navigation.getByRole("link", { name: "设置" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+});
+
+test("offers a keyboard skip link to the route content", async ({ page }) => {
+  await page.goto("/");
+  await page.keyboard.press("Tab");
+
+  const skipLink = page.getByRole("link", { name: "跳到主要内容" });
+  await expect(skipLink).toBeFocused();
+  await skipLink.press("Enter");
+  await expect(page.locator("#main-content")).toBeFocused();
+});
+
+test("keeps the navigation usable at every required breakpoint", async ({ page }, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "chromium-desktop",
+    "One Chromium project covers the matrix.",
+  );
+
+  await page.goto("/");
+  for (const width of [320, 768, 1024, 1440]) {
+    await page.setViewportSize({ height: 900, width });
+
+    const desktopNavigation = page.locator('[data-navigation="sidebar"]');
+    const mobileNavigation = page.locator('[data-navigation="bottom"]');
+    await expect(width >= 768 ? desktopNavigation : mobileNavigation).toBeVisible();
+    await expect(width >= 768 ? mobileNavigation : desktopNavigation).toBeHidden();
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth),
+      `horizontal overflow at ${width}px`,
+    ).toBe(width);
+  }
+});
+
+test("shows an offline state without caching API or export responses", async ({
+  context,
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "chromium-desktop", "One isolated browser is sufficient.");
+
+  await page.goto("/transactions");
+  await page.evaluate(async () => navigator.serviceWorker.ready);
+  await page.reload();
+  await expect
+    .poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller)))
+    .toBe(true);
+
+  await page.evaluate(async () => {
+    await Promise.allSettled([
+      fetch("/api/v1/transactions", { cache: "no-store" }),
+      fetch("/api/v1/exports/full.json", { cache: "no-store" }),
+    ]);
+  });
+  const cachedPaths = await page.evaluate(async () => {
+    const names = await caches.keys();
+    const requests = await Promise.all(names.map(async (name) => (await caches.open(name)).keys()));
+    return requests.flat().map((request) => new URL(request.url).pathname);
+  });
+  expect(cachedPaths.some((path) => path.startsWith("/api/") || path.startsWith("/exports/"))).toBe(
+    false,
+  );
+
+  await context.setOffline(true);
+  await expect(page.getByRole("heading", { level: 2, name: "当前处于离线状态" })).toBeVisible();
+  await expect(page.getByText("不会显示缓存的交易记录", { exact: false })).toBeVisible();
+  await expect(page.locator(".route-stage")).toHaveCount(0);
+  await context.setOffline(false);
 });

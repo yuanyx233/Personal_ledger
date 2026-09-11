@@ -15,7 +15,6 @@
   "dependencies": {
     "@ledger/domain": "0.0.0",
     "@ledger/persistence": "0.0.0",
-    "@ledger/plaid": "0.0.0",
     "jose": "6.2.3",
     "react": "19.2.7",
     "react-dom": "19.2.7"

@@ -29,9 +29,7 @@ const worker = createAppWorker(() =>
 
 function expectSecurityHeaders(response: Response): void {
   expect(response.headers.get("Content-Security-Policy")).toBe(
-    "default-src 'self'; base-uri 'none'; connect-src 'self'; font-src 'self'; " +
-      "form-action 'self'; frame-ancestors 'none'; img-src 'self' data:; object-src 'none'; " +
-      "script-src 'self'; style-src 'self'",
+    "default-src 'self'; base-uri 'none'; connect-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; frame-src 'none'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'",
   );
   expect(response.headers.get("Strict-Transport-Security")).toBe(
     "max-age=31536000; includeSubDomains",

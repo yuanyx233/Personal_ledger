@@ -92,3 +92,26 @@ The installable PWA MAY cache versioned static assets but MUST NOT persist authe
 
 - **WHEN** the owner opens the installed app without network access
 - **THEN** the app SHALL show an offline state and SHALL NOT display a cached transaction history as though it were current
+
+### Requirement: Usable trusted-device Access sessions
+
+The application SHALL remain fully protected by Cloudflare Access. In a separately authorized remote configuration step, the single-owner policy/application and global session durations SHOULD be configured for no more than one month so a trusted personal device normally authenticates about once per month rather than once per day. No route may use Access Bypass, an unguessable URL, or a browser-stored service token to achieve this convenience.
+
+#### Scenario: Owner returns on the same trusted device
+
+- **WHEN** a valid Access authorization cookie remains within the configured session duration
+- **THEN** the owner SHALL reach the protected app without another identity-provider prompt
+
+#### Scenario: Owner uses another device or cleared browser data
+
+- **WHEN** the device does not carry a valid Access authorization cookie
+- **THEN** Access SHALL authenticate that device before the Worker returns application or financial data
+
+### Requirement: Expired-session recovery in the SPA
+
+Browser API requests SHALL identify themselves as AJAX requests using Cloudflare's documented header and SHALL surface an explicit reload/sign-in action when Access reports an expired session instead of presenting a generic write failure.
+
+#### Scenario: Access expires while quick entry is open
+
+- **WHEN** the owner submits a transaction after the Access session has expired
+- **THEN** the application SHALL preserve no secret credential, SHALL make no unauthenticated write, and SHALL clearly direct the owner to sign in and retry

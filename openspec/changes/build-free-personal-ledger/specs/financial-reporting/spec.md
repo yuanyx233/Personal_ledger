@@ -60,6 +60,14 @@ Month, quarter, and year views SHALL show like-for-like previous-period and prev
 
 Reports SHALL provide category distribution, merchant ranking, account filters, and drill-down links whose transaction population reconciles to the displayed aggregate.
 
+#### Scenario: Merchant orders or branches have different descriptions
+
+- **WHEN** expense transactions belong to the same explicitly recognized merchant service, such as Amazon shopping orders or T&T branches
+- **THEN** the ranking SHALL combine their transaction counts and net spending under a readable merchant name, including refunds and reimbursements
+- **AND** distinct services SHALL remain separate, including Amazon shopping versus Prime and Uber rides versus Uber Eats
+- **AND** drill-down, pagination, and filtered CSV exports SHALL include the same merchant family within the selected period, account, category, and currency
+- **AND** unknown merchants SHALL retain exact grouping, and original transaction descriptions, exact merchant keys, category rules, and duplicate matching SHALL remain unchanged
+
 #### Scenario: Owner opens a category total
 
 - **WHEN** the owner selects a category in a report

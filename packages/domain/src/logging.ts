@@ -12,25 +12,15 @@ function internalIdSchema(prefix: string) {
 
 const structuredLogInputSchema = z.object({
   accountId: internalIdSchema("account-").optional(),
-  connectionId: internalIdSchema("connection-").optional(),
   durationMs: z.int().nonnegative().max(3_600_000).optional(),
-  errorCode: z
-    .union([apiErrorCodeSchema, z.enum(["ITEM_LOGIN_REQUIRED", "SYNC_NOT_READY"])])
-    .optional(),
-  event: z.enum([
-    "ACCESS_CHECK",
-    "API_REQUEST",
-    "CSV_IMPORT",
-    "PLAID_TOKEN_CRYPTO",
-    "PLAID_WEBHOOK",
-    "SYNC_RUN",
-  ]),
+  errorCode: apiErrorCodeSchema.optional(),
+  event: z.enum(["ACCESS_CHECK", "API_REQUEST", "CSV_IMPORT", "SUBSCRIPTION_SCHEDULE"]),
+  generated: z.int().min(0).max(8).optional(),
   importBatchId: internalIdSchema("import-").optional(),
   level: z.enum(["INFO", "WARN", "ERROR"]),
   outcome: z.enum(["STARTED", "SUCCESS", "DENIED", "FAILED"]),
   requestId: internalIdSchema("request-").optional(),
   status: z.int().min(100).max(599).optional(),
-  syncRunId: internalIdSchema("sync-run-").optional(),
   transactionId: internalIdSchema("transaction-").optional(),
 });
 

@@ -7,7 +7,7 @@ const SENSITIVE_VALUES = {
   accountMask: "9876543210123456",
   csvRow: '=HYPERLINK("https://evil.example","click"),123.45',
   merchantName: "Private Health Merchant",
-  webhookBody: '{"item_id":"item-private","new_transactions":42}',
+  requestBody: '{"account_id":"account-private","amount":42}',
 };
 
 describe("allowlisted structured logging", () => {
@@ -20,10 +20,9 @@ describe("allowlisted structured logging", () => {
 
     expect(
       logger.write({
-        connectionId: "connection-1",
         durationMs: 42,
         errorCode: "UPSTREAM_UNAVAILABLE",
-        event: "SYNC_RUN",
+        event: "API_REQUEST",
         level: "ERROR",
         outcome: "FAILED",
         requestId: "request-1",
@@ -32,10 +31,9 @@ describe("allowlisted structured logging", () => {
     ).toBe(true);
     expect(lines).toEqual([
       JSON.stringify({
-        connectionId: "connection-1",
         durationMs: 42,
         errorCode: "UPSTREAM_UNAVAILABLE",
-        event: "SYNC_RUN",
+        event: "API_REQUEST",
         level: "ERROR",
         outcome: "FAILED",
         requestId: "request-1",
@@ -45,7 +43,7 @@ describe("allowlisted structured logging", () => {
     ]);
   });
 
-  it("drops token, account, merchant, CSV, webhook, message, and error fields", () => {
+  it("drops token, account, merchant, CSV, request-body, message, and error fields", () => {
     const lines: string[] = [];
     const logger = createStructuredLogger({
       now: () => new Date("2026-07-15T12:00:00.000Z"),
@@ -56,7 +54,7 @@ describe("allowlisted structured logging", () => {
       logger.write({
         ...SENSITIVE_VALUES,
         error: new Error(Object.values(SENSITIVE_VALUES).join(" | ")),
-        event: "PLAID_WEBHOOK",
+        event: "API_REQUEST",
         level: "WARN",
         message: Object.values(SENSITIVE_VALUES).join(" | "),
         outcome: "DENIED",
@@ -72,7 +70,7 @@ describe("allowlisted structured logging", () => {
     expect(output).not.toContain("message");
     expect(output).not.toContain("error");
     expect(JSON.parse(output)).toEqual({
-      event: "PLAID_WEBHOOK",
+      event: "API_REQUEST",
       level: "WARN",
       outcome: "DENIED",
       requestId: "request-2",
@@ -104,7 +102,7 @@ describe("allowlisted structured logging", () => {
         throw new Error(SENSITIVE_VALUES.accessToken);
       },
       sink: () => {
-        throw new Error(SENSITIVE_VALUES.webhookBody);
+        throw new Error(SENSITIVE_VALUES.requestBody);
       },
     });
 

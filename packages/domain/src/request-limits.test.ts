@@ -10,19 +10,49 @@ import {
 
 describe("per-route request limits", () => {
   it("assigns conservative limits by stable API resource", () => {
-    expect(
-      resolveAppRequestPolicy(
-        new Request("https://ledger.example/api/v1/imports/preview", { method: "POST" }),
-      ),
-    ).toMatchObject({
+    const importPolicy = resolveAppRequestPolicy(
+      new Request("https://ledger.example/api/v1/imports/preview", { method: "POST" }),
+    );
+    expect(importPolicy).toMatchObject({
       bodyBytes: REQUEST_LIMITS.IMPORT_PREVIEW_BYTES,
       columnLimit: 32,
       routeId: "imports",
-      rowLimit: 10_000,
+      rowLimit: 4_000,
     });
+    expect(REQUEST_LIMITS.IMPORT_FILE_BYTES).toBe(5 * 1024 * 1024);
+    expect(importPolicy.bodyBytes).toBeGreaterThan(REQUEST_LIMITS.IMPORT_FILE_BYTES);
+    expect(
+      resolveAppRequestPolicy(
+        new Request("https://ledger.example/api/v1/imports/import-preview-fixture/commit", {
+          method: "POST",
+        }),
+      ),
+    ).toMatchObject({
+      bodyBytes: REQUEST_LIMITS.IMPORT_COMMIT_BYTES,
+      routeId: "imports",
+    });
+    expect(REQUEST_LIMITS.IMPORT_COMMIT_BYTES).toBe(512 * 1024);
     expect(
       resolveAppRequestPolicy(new Request("https://ledger.example/api/v1/transactions")),
-    ).toMatchObject({ dateRangeDays: 730, pageSize: 100, routeId: "transactions" });
+    ).toMatchObject({
+      dateRangeDays: 730,
+      pageSize: 100,
+      routeId: "transactions",
+    });
+    expect(
+      resolveAppRequestPolicy(new Request("https://ledger.example/api/v1/merchant-rules")),
+    ).toMatchObject({ pageSize: 100, routeId: "merchant-rules" });
+    expect(
+      resolveAppRequestPolicy(new Request("https://ledger.example/api/v1/review-queue")),
+    ).toEqual({ routeId: "other-api" });
+    expect(
+      resolveAppRequestPolicy(
+        new Request("https://ledger.example/api/v1/subscriptions", { method: "POST" }),
+      ),
+    ).toMatchObject({ bodyBytes: 65_536, routeId: "subscriptions" });
+    expect(
+      resolveAppRequestPolicy(new Request("https://ledger.example/api/v1/subscription-candidates")),
+    ).toEqual({ routeId: "other-api" });
     expect(
       resolveAppRequestPolicy(
         new Request("https://ledger.example/api/v1/transactions", { method: "PATCH" }),
@@ -73,12 +103,10 @@ describe("per-route request limits", () => {
       new Request("https://ledger.example/api/v1/imports/preview", { method: "POST" }),
     );
 
-    expect(() =>
-      assertImportShapeWithinLimits({ columns: 32, rows: 10_000 }, policy),
-    ).not.toThrow();
+    expect(() => assertImportShapeWithinLimits({ columns: 32, rows: 4_000 }, policy)).not.toThrow();
     for (const shape of [
       { columns: 33, rows: 1 },
-      { columns: 1, rows: 10_001 },
+      { columns: 1, rows: 4_001 },
       { columns: 1.5, rows: 1 },
     ]) {
       expect(() => assertImportShapeWithinLimits(shape, policy)).toThrowError(RequestLimitError);

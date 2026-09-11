@@ -2,12 +2,12 @@
 
 ### Requirement: Unified canonical ledger
 
-The system SHALL store Plaid, manual, and committed CSV transactions in one canonical ledger with source, account, status, dates, amount, direction, currency, description/merchant, category provenance, review state, version, and audit timestamps.
+The system SHALL store Plaid, manual (including transactions linked to subscription occurrences), and committed CSV transactions in one canonical ledger with source, account, status, dates, amount, direction, currency, description/merchant, category provenance, review state, version, and audit timestamps.
 
 #### Scenario: Transactions from different sources are viewed
 
 - **WHEN** the owner opens the transaction list
-- **THEN** eligible Plaid, manual, and CSV records SHALL appear under the same filters and detail contract with a visible source
+- **THEN** eligible Plaid, manual, subscription-linked, and CSV records SHALL appear under the same filters and detail contract with visible provider source and subscription-origin metadata where applicable
 
 #### Scenario: Same Plaid transaction is seen twice
 
@@ -30,17 +30,27 @@ The ledger SHALL preserve `PENDING`, `POSTED`, and `REMOVED` states and SHALL li
 
 ### Requirement: Manual entry
 
-The owner SHALL be able to create, edit, and delete manual transactions with date, direction, amount, currency, description, account label, and category, subject to validation and optimistic concurrency.
+The owner SHALL be able to create, edit, and delete manual transactions with date, direction, amount, currency, description, account label, and an optional category, subject to validation and optimistic concurrency. The first release SHALL accept CAD and USD for manual entry. A missing category SHALL resolve through an active exact owner rule or remain `Unclassified` for immediate/review confirmation.
 
 #### Scenario: Valid manual transaction is saved
 
-- **WHEN** the owner submits all required fields with a current version/CSRF token
+- **WHEN** the owner submits the required transaction fields with a current CSRF token
 - **THEN** a `MANUAL` transaction SHALL be added to the canonical ledger and included in reports under the same rules as posted imports
+
+#### Scenario: Quick entry omits category
+
+- **WHEN** the owner records a valid purchase without choosing a category and no active exact rule matches
+- **THEN** the transaction SHALL be created once as `Unclassified`, included in total spending, and returned with confirmation-required metadata
 
 #### Scenario: Two devices edit the same transaction
 
 - **WHEN** a write carries a stale version
 - **THEN** the system SHALL return 409 with the current version and SHALL NOT silently overwrite the newer edit
+
+#### Scenario: Unsupported manual-entry currency is submitted
+
+- **WHEN** the owner submits a manual transaction in a currency other than CAD or USD
+- **THEN** the system SHALL return 422 and SHALL NOT create a ledger entry
 
 ### Requirement: Exact money representation
 
@@ -58,7 +68,7 @@ The system MUST represent money using non-negative integer minor units plus expl
 
 ### Requirement: High-confidence internal-transfer exclusion
 
-The system SHALL automatically exclude a transfer only when two enabled owner accounts contain an equal-currency, equal-amount, opposite-direction pair within three days and provider/text evidence supports payment or transfer semantics.
+The system SHALL automatically exclude a transfer only when two enabled owner accounts contain an equal-currency, equal-amount, opposite-direction pair within three days, both sides have a unique counterpart, and either provider payment-method evidence exists or explicit payment text is reinforced by a chequing-to-credit-card account pair. Text-only evidence for other account pairs SHALL require review.
 
 #### Scenario: Chequing pays an enabled credit card
 
@@ -75,6 +85,11 @@ The system SHALL automatically exclude a transfer only when two enabled owner ac
 - **WHEN** the owner confirms or removes a transfer match
 - **THEN** the manual decision SHALL be audited and SHALL override subsequent automatic matching
 
+#### Scenario: Owner ignores an ambiguous candidate
+
+- **WHEN** the owner ignores one pending transfer candidate with the current match version
+- **THEN** the system SHALL retain the pair as an audited owner rejection and SHALL NOT recreate that pair during later automatic matching
+
 ### Requirement: External Interac e-Transfer preservation
 
 An Interac e-Transfer SHALL remain an income/expense candidate unless it is matched to another enabled owner account under the internal-transfer rule; optional payer/payee/reference data SHALL be displayed only when supplied by Plaid.
@@ -88,6 +103,16 @@ An Interac e-Transfer SHALL remain an income/expense candidate unless it is matc
 
 - **WHEN** Plaid supplies no payer, payee, reference, or method detail
 - **THEN** the UI SHALL indicate the field was not provided and SHALL NOT invent a counterparty
+
+#### Scenario: Partial counterparty metadata is supplied
+
+- **WHEN** Plaid supplies only some payer, payee, reference, or method fields for an e-Transfer
+- **THEN** the transaction read model SHALL return those exact supplied values, represent the other four-field contract values as not provided, and SHALL NOT expose other payment metadata
+
+#### Scenario: An e-Transfer is confirmed as internal
+
+- **WHEN** an e-Transfer receives an active automatic or owner-confirmed match to another enabled owner account
+- **THEN** its uncertain e-Transfer review flag SHALL clear atomically while the original transaction direction and metadata remain unchanged
 
 ### Requirement: Refund treatment
 

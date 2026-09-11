@@ -21,7 +21,7 @@ CSV import SHALL parse and validate into a preview before changing the ledger, a
 
 ### Requirement: Import deduplication and source retention
 
-The system SHALL use a batch content checksum and canonical row fingerprint to detect repeat submissions while retaining the import batch and row source on committed transactions.
+The system SHALL use a batch content checksum and canonical row fingerprint to detect repeat submissions while retaining the import batch and row source on committed or reconciled transactions. A bank row may auto-merge with an existing manual transaction, including one linked to a subscription occurrence, only when the candidate is unique and high-confidence under the explicit reconciliation rule; all other suspected matches require an owner decision.
 
 #### Scenario: Same batch is committed twice
 
@@ -32,6 +32,45 @@ The system SHALL use a batch content checksum and canonical row fingerprint to d
 
 - **WHEN** its fingerprint resembles an existing transaction but is not an exact previously committed row
 - **THEN** the preview SHALL flag it for owner decision rather than silently dropping it
+
+#### Scenario: Bank row uniquely matches a manual transaction
+
+- **WHEN** account label, currency, direction, exact amount, a date within three days, and deterministic merchant/rule evidence identify exactly one manual transaction, including one linked to a subscription occurrence
+- **THEN** commit SHALL link the import row to that canonical transaction, report it as automatically merged, preserve the owner category/rule, and SHALL NOT create a second ledger transaction
+
+#### Scenario: More than one candidate can match
+
+- **WHEN** the same bank row has multiple eligible canonical candidates or lacks merchant/subscription evidence
+- **THEN** it SHALL remain a suspected duplicate requiring owner choice and SHALL NOT auto-merge
+
+### Requirement: Native RBC CSV adapter
+
+The CSV preview SHALL recognize RBC files whose exact headers are `Account Type`, `Account Number`, `Transaction Date`, `Cheque Number`, `Description 1`, `Description 2`, `CAD$`, and `USD$`. It SHALL convert valid rows into the canonical preview without requiring manual column mapping.
+
+#### Scenario: RBC Visa row is previewed
+
+- **WHEN** a row contains a valid M/D/YYYY date, one signed CAD or USD amount, and RBC description fields
+- **THEN** the adapter SHALL convert the date to ISO, derive direction from the sign, store the non-negative amount, combine the two description fields safely, and use a non-sensitive `RBC Credit` account label
+
+#### Scenario: RBC chequing row is previewed
+
+- **WHEN** the same schema identifies `Chequing` account type
+- **THEN** the adapter SHALL use the non-sensitive `RBC Debit` account label and the same canonical money/date rules
+
+#### Scenario: RBC account number is present
+
+- **WHEN** column B contains a full or masked account number
+- **THEN** its value SHALL be ignored for matching, preview output, canonical batch/row checksums, persistence, export, and production logging
+
+#### Scenario: Both or neither currency columns contain an amount
+
+- **WHEN** a row cannot select exactly one non-empty valid `CAD$` or `USD$` amount
+- **THEN** it SHALL produce a row-level currency/amount error and SHALL NOT guess a currency
+
+#### Scenario: Two source rows have identical visible values
+
+- **WHEN** a bank file contains multiple rows with the same canonical date, account, amount, direction, currency, and description but no stable bank transaction id
+- **THEN** the adapter SHALL retain separate occurrence-ordinal row identities and flag the later row for owner review rather than assuming one row is impossible
 
 ### Requirement: Filtered transaction CSV export
 

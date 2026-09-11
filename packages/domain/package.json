@@ -27,10 +27,6 @@
     "./testing": {
       "types": "./dist/testing.d.ts",
       "import": "./dist/testing.js"
-    },
-    "./token-crypto": {
-      "types": "./dist/token-crypto.d.ts",
-      "import": "./dist/token-crypto.js"
     }
   },
   "files": [

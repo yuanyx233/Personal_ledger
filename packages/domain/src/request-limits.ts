@@ -4,11 +4,12 @@ import { calendarDateSchema } from "./api-contracts";
 export const REQUEST_LIMITS = {
   DEFAULT_JSON_BYTES: 64 * 1024,
   IMPORT_COLUMNS: 32,
-  IMPORT_PREVIEW_BYTES: 5 * 1024 * 1024,
-  IMPORT_ROWS: 10_000,
+  IMPORT_COMMIT_BYTES: 512 * 1024,
+  IMPORT_FILE_BYTES: 5 * 1024 * 1024,
+  IMPORT_PREVIEW_BYTES: Math.ceil((5 * 1024 * 1024) / 3) * 4 + 16 * 1024,
+  IMPORT_ROWS: 4_000,
   MAX_DATE_RANGE_DAYS: 730,
   PAGE_SIZE: 100,
-  PLAID_WEBHOOK_BYTES: 256 * 1024,
 } as const;
 
 export interface RequestPolicy {
@@ -33,19 +34,17 @@ export class RequestLimitError extends Error {
 }
 
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
-const QUERY_LIMITED_ROUTES = new Set(["exports", "reports", "transactions"]);
+const QUERY_LIMITED_ROUTES = new Set(["exports", "merchant-rules", "reports", "transactions"]);
 const KNOWN_ROUTE_IDS = new Set([
+  "budgets",
   "accounts",
   "categories",
-  "connections",
   "exports",
   "imports",
   "merchant-rules",
-  "plaid",
   "reports",
-  "review-queue",
   "session",
-  "sync-runs",
+  "subscriptions",
   "transactions",
 ]);
 
@@ -57,11 +56,13 @@ function routeIdFromUrl(url: URL): string {
 export function resolveAppRequestPolicy(request: Request): RequestPolicy {
   const url = new URL(request.url);
   const routeId = routeIdFromUrl(url);
+  const isImportCommit = /^\/api\/v1\/imports\/[^/]+\/commit$/.test(url.pathname);
   const policy: RequestPolicy = { routeId };
 
   if (WRITE_METHODS.has(request.method)) {
-    policy.bodyBytes =
-      routeId === "imports"
+    policy.bodyBytes = isImportCommit
+      ? REQUEST_LIMITS.IMPORT_COMMIT_BYTES
+      : routeId === "imports"
         ? REQUEST_LIMITS.IMPORT_PREVIEW_BYTES
         : REQUEST_LIMITS.DEFAULT_JSON_BYTES;
   }

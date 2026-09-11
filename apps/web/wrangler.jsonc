@@ -4,20 +4,19 @@
   "main": "./worker/index.ts",
   "compatibility_date": "2026-07-15",
   "workers_dev": true,
+  "preview_urls": false,
+  "triggers": {
+    "crons": ["*/15 * * * *"],
+  },
   "vars": {
     "APP_TIMEZONE": "America/Toronto",
-    "PLAID_ENV": "sandbox",
-    "PLAID_BMO_INSTITUTION_ID": "REPLACE_ME_PLAID_BMO_INSTITUTION_ID",
-    "PLAID_LINK_CUSTOMIZATION_NAME": "personal-ledger-account-select",
-    "PLAID_RBC_INSTITUTION_ID": "REPLACE_ME_PLAID_RBC_INSTITUTION_ID",
-    "PLAID_WEBHOOK_URL": "https://replace-me.invalid/webhooks/plaid",
   },
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "personal-ledger",
+      "database_name": "personal-ledger-production",
       // Replaced only during the separately authorized deployment task.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "908a378d-e83b-4dac-9808-b5a0476016ef",
       "migrations_dir": "../../migrations",
     },
   ],
@@ -31,28 +30,14 @@
       },
     },
   ],
-  "services": [
-    {
-      "binding": "SYNC",
-      "service": "personal-ledger-sync",
-      "entrypoint": "SyncService",
-    },
-  ],
   // Required values are loaded from .dev.vars locally and encrypted Worker secrets in production.
   // Source: https://developers.cloudflare.com/workers/configuration/secrets/
   "secrets": {
-    "required": [
-      "ACCESS_AUD",
-      "ACCESS_TEAM_DOMAIN",
-      "CSRF_HMAC_KEY",
-      "OWNER_EMAIL",
-      "PLAID_CLIENT_ID",
-      "PLAID_SECRET",
-      "PLAID_TOKEN_ENCRYPTION_KEY",
-    ],
+    "required": ["ACCESS_AUD", "ACCESS_TEAM_DOMAIN", "CSRF_HMAC_KEY", "OWNER_EMAIL"],
   },
   "assets": {
     "binding": "ASSETS",
+    "directory": "./dist/client",
     "not_found_handling": "single-page-application",
     // Keep every app/static request on the Worker authentication boundary.
     // Source: https://developers.cloudflare.com/workers/static-assets/routing/worker-script/

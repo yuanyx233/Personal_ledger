@@ -1,7 +1,11 @@
 import { applyD1Migrations, env } from "cloudflare:test";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
+import { clearTransferMatchAudits } from "./support/transfer-audits";
+import { clearCategoryAudits } from "./support/category-audits";
+
 const EXPECTED_COLUMNS = {
+  category_budgets: ["category_id", "currency", "effective_month", "amount_minor", "updated_at"],
   accounts: [
     "id",
     "connection_id",
@@ -26,6 +30,7 @@ const EXPECTED_COLUMNS = {
     "created_at",
     "updated_at",
     "version",
+    "normalized_name",
   ],
   category_audits: [
     "id",
@@ -36,6 +41,8 @@ const EXPECTED_COLUMNS = {
     "new_source",
     "reason",
     "created_at",
+    "old_category_rule_id",
+    "new_category_rule_id",
   ],
   connections: [
     "id",
@@ -71,6 +78,7 @@ const EXPECTED_COLUMNS = {
     "created_at",
     "committed_at",
     "version",
+    "source_filename_hash",
   ],
   import_rows: [
     "id",
@@ -82,6 +90,9 @@ const EXPECTED_COLUMNS = {
     "errors_json",
     "transaction_id",
     "created_at",
+    "resolution",
+    "match_evidence_json",
+    "resolved_at",
   ],
   merchant_rules: [
     "id",
@@ -92,6 +103,36 @@ const EXPECTED_COLUMNS = {
     "created_at",
     "updated_at",
     "version",
+  ],
+  subscription_occurrences: [
+    "id",
+    "subscription_id",
+    "scheduled_date",
+    "transaction_id",
+    "status",
+    "owner_decision_at",
+    "created_at",
+    "updated_at",
+    "version",
+  ],
+  subscriptions: [
+    "id",
+    "name",
+    "merchant_name",
+    "normalized_merchant",
+    "account_label",
+    "amount_minor",
+    "currency",
+    "category_id",
+    "cadence",
+    "anchor_day",
+    "next_charge_date",
+    "status",
+    "last_error_code",
+    "created_at",
+    "updated_at",
+    "version",
+    "cancellation_effective_date",
   ],
   sync_events: [
     "id",
@@ -149,6 +190,11 @@ const EXPECTED_COLUMNS = {
     "created_at",
     "updated_at",
     "version",
+    "normalized_merchant",
+    "plaid_pfc_primary",
+    "plaid_pfc_detailed",
+    "plaid_pfc_confidence",
+    "reimbursement_minor",
   ],
   transfer_matches: [
     "id",
@@ -162,6 +208,16 @@ const EXPECTED_COLUMNS = {
     "updated_at",
     "version",
   ],
+  transfer_match_audits: [
+    "id",
+    "transfer_match_id",
+    "action",
+    "old_status",
+    "new_status",
+    "reason",
+    "match_version",
+    "created_at",
+  ],
 } as const;
 
 beforeAll(async () => {
@@ -169,18 +225,21 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+  await clearCategoryAudits(env.DB);
+  await clearTransferMatchAudits(env.DB);
   await env.DB.batch(
     [
       "import_rows",
       "import_batches",
+      "subscription_occurrences",
+      "subscriptions",
       "transfer_matches",
-      "category_audits",
       "sync_events",
       "sync_run_requests",
       "sync_runs",
       "transactions",
       "merchant_rules",
-      "categories",
+      "categories WHERE system_key IS NULL",
       "accounts",
       "connections",
       "connection_requests",
@@ -286,6 +345,36 @@ describe("initial D1 schema", () => {
     }
   });
 
+  it("allows editable custom transfer categories while protecting unclassified semantics", async () => {
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO categories (
+          id, name, normalized_name, kind, system_key, editable, active,
+          created_at, updated_at, version
+        ) VALUES ('category-transfer-emt', 'EMT', 'emt', 'TRANSFER', NULL, 1, 1,
+          '2026-09-03T00:00:00.000Z', '2026-09-03T00:00:00.000Z', 1)`,
+      ).run(),
+    ).resolves.toBeDefined();
+
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO categories (
+          id, name, normalized_name, kind, system_key, editable, active,
+          created_at, updated_at, version
+        ) VALUES ('category-unclassified-owner', 'Owner unknown', 'owner unknown',
+          'UNCLASSIFIED', NULL, 1, 1,
+          '2026-09-03T00:00:00.000Z', '2026-09-03T00:00:00.000Z', 1)`,
+      ).run(),
+    ).rejects.toThrow(/invalid category kind or system state/);
+
+    await expect(
+      env.DB.prepare(
+        `UPDATE categories SET name = 'Changed transfer'
+         WHERE id = 'category-system-transfer'`,
+      ).run(),
+    ).rejects.toThrow(/system categories are immutable/);
+  });
+
   it("enforces connection and eligible-account identity and status constraints", async () => {
     await insertConnection();
     await insertAccount();
@@ -354,6 +443,25 @@ describe("initial D1 schema", () => {
     await expect(
       insertTransaction("duplicate-plaid", { plaidTransactionId: "plaid-pending-1" }),
     ).rejects.toThrow();
+    await expect(
+      env.DB.prepare(
+        `UPDATE transactions
+         SET plaid_pfc_primary = 'INCOME', plaid_pfc_detailed = NULL
+         WHERE id = 'pending-1'`,
+      ).run(),
+    ).rejects.toThrow();
+    await expect(
+      env.DB.prepare(
+        `UPDATE transactions
+         SET plaid_pfc_primary = 'income', plaid_pfc_detailed = 'income_wages'
+         WHERE id = 'pending-1'`,
+      ).run(),
+    ).rejects.toThrow();
+    await expect(
+      env.DB.prepare("UPDATE transactions SET normalized_merchant = ? WHERE id = 'pending-1'")
+        .bind("x".repeat(257))
+        .run(),
+    ).rejects.toThrow();
   });
 
   it("links merchant rules and append-only category audits to canonical records", async () => {
@@ -379,6 +487,13 @@ describe("initial D1 schema", () => {
       .run();
 
     await expect(
+      env.DB.prepare("UPDATE category_audits SET reason = 'Tampered'").run(),
+    ).rejects.toThrow(/append-only/);
+    await expect(env.DB.prepare("DELETE FROM category_audits").run()).rejects.toThrow(
+      /append-only/,
+    );
+
+    await expect(
       env.DB.prepare(
         `INSERT INTO merchant_rules (
           id, normalized_merchant, display_merchant, category_id, active,
@@ -394,6 +509,7 @@ describe("initial D1 schema", () => {
     await seedLedgerGraph();
     await insertTransaction("transfer-left", { direction: "OUTFLOW" });
     await insertTransaction("transfer-right", { direction: "INFLOW" });
+    await insertTransaction("transfer-third", { direction: "INFLOW" });
 
     await env.DB.prepare(
       `INSERT INTO transfer_matches (
@@ -404,6 +520,32 @@ describe("initial D1 schema", () => {
     )
       .bind("2026-01-15T12:00:00.000Z", "2026-01-15T12:00:00.000Z")
       .run();
+    await expect(
+      env.DB.prepare(
+        `INSERT INTO transfer_matches (
+          id, left_transaction_id, right_transaction_id, status, confidence,
+          evidence_json, created_at, updated_at, version
+        ) VALUES ('match-overlap-active', 'transfer-left', 'transfer-third', 'CONFIRMED',
+          'HIGH', '{}', ?, ?, 1)`,
+      )
+        .bind("2026-01-15T12:00:00.000Z", "2026-01-15T12:00:00.000Z")
+        .run(),
+    ).rejects.toThrow();
+    await env.DB.prepare(
+      `INSERT INTO transfer_matches (
+        id, left_transaction_id, right_transaction_id, status, confidence,
+        evidence_json, created_at, updated_at, version
+      ) VALUES ('match-overlap-pending', 'transfer-left', 'transfer-third', 'PENDING_REVIEW',
+        'AMBIGUOUS', '{}', ?, ?, 1)`,
+    )
+      .bind("2026-01-15T12:00:00.000Z", "2026-01-15T12:00:00.000Z")
+      .run();
+    await expect(
+      env.DB.prepare(
+        `UPDATE transfer_matches SET status = 'CONFIRMED'
+         WHERE id = 'match-overlap-pending'`,
+      ).run(),
+    ).rejects.toThrow();
     await env.DB.prepare(
       `INSERT INTO sync_events (
         id, event_hash, connection_id, event_type, minimal_payload_json,
@@ -437,6 +579,14 @@ describe("initial D1 schema", () => {
     )
       .bind("2026-01-15T12:00:00.000Z")
       .run();
+    await expect(
+      env.DB.prepare(
+        "UPDATE import_batches SET source_filename_hash = 'not-a-sha256' WHERE id = 'batch-1'",
+      ).run(),
+    ).rejects.toThrow();
+    await env.DB.prepare("UPDATE import_batches SET source_filename_hash = ? WHERE id = 'batch-1'")
+      .bind("a".repeat(64))
+      .run();
 
     await expect(
       env.DB.prepare(
@@ -468,6 +618,103 @@ describe("initial D1 schema", () => {
       )
         .bind("2026-01-15T12:00:00.000Z")
         .run(),
+    ).rejects.toThrow();
+  });
+
+  it("enforces append-only transfer decision audit constraints", async () => {
+    await seedLedgerGraph();
+    await insertTransaction("audit-transfer-left", { direction: "OUTFLOW" });
+    await insertTransaction("audit-transfer-right", { direction: "INFLOW" });
+    await env.DB.prepare(
+      `INSERT INTO transfer_matches (
+        id, left_transaction_id, right_transaction_id, status, confidence,
+        evidence_json, created_at, updated_at, version
+      ) VALUES ('match-audit', 'audit-transfer-left', 'audit-transfer-right', 'AUTO_CONFIRMED',
+        'HIGH', '{}', ?, ?, 1)`,
+    )
+      .bind("2026-01-15T12:00:00.000Z", "2026-01-15T12:00:00.000Z")
+      .run();
+
+    const insertAudit = (
+      id: string,
+      overrides: {
+        action?: string;
+        matchVersion?: number;
+        newStatus?: string;
+        oldStatus?: string;
+        reason?: string;
+        transferMatchId?: string;
+      } = {},
+    ) => {
+      const action = overrides.action ?? "CONFIRM";
+      const reason =
+        overrides.reason ??
+        (action === "BREAK"
+          ? "OWNER_BROKE"
+          : action === "IGNORE"
+            ? "OWNER_IGNORED"
+            : "OWNER_CONFIRMED");
+      return env.DB.prepare(
+        `INSERT INTO transfer_match_audits (
+          id, transfer_match_id, action, old_status, new_status, reason,
+          match_version, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+        .bind(
+          id,
+          overrides.transferMatchId ?? "match-audit",
+          action,
+          overrides.oldStatus ?? "AUTO_CONFIRMED",
+          overrides.newStatus ?? "CONFIRMED",
+          reason,
+          overrides.matchVersion ?? 2,
+          "2026-01-15T12:30:00.000Z",
+        )
+        .run();
+    };
+
+    await insertAudit("transfer-audit-1");
+    await insertAudit("transfer-audit-2", {
+      action: "BREAK",
+      matchVersion: 3,
+      newStatus: "BROKEN",
+      oldStatus: "CONFIRMED",
+    });
+    await insertAudit("transfer-audit-3", {
+      action: "IGNORE",
+      matchVersion: 4,
+      newStatus: "IGNORED",
+      oldStatus: "PENDING_REVIEW",
+    });
+    await expect(
+      insertAudit("transfer-audit-action", { action: "DELETE", matchVersion: 5 }),
+    ).rejects.toThrow();
+    await expect(
+      insertAudit("transfer-audit-old-status", { matchVersion: 6, oldStatus: "UNKNOWN" }),
+    ).rejects.toThrow();
+    await expect(
+      insertAudit("transfer-audit-new-status", { matchVersion: 7, newStatus: "UNKNOWN" }),
+    ).rejects.toThrow();
+    await expect(insertAudit("transfer-audit-zero", { matchVersion: 0 })).rejects.toThrow();
+    await expect(insertAudit("transfer-audit-float", { matchVersion: 2.5 })).rejects.toThrow();
+    await expect(insertAudit("transfer-audit-duplicate-version")).rejects.toThrow();
+    await expect(
+      insertAudit("transfer-audit-orphan", {
+        matchVersion: 8,
+        transferMatchId: "missing-match",
+      }),
+    ).rejects.toThrow();
+    await expect(
+      env.DB.prepare(
+        `UPDATE transfer_match_audits SET reason = 'OWNER_IGNORED'
+         WHERE id = 'transfer-audit-1'`,
+      ).run(),
+    ).rejects.toThrow();
+    await expect(
+      env.DB.prepare("DELETE FROM transfer_match_audits WHERE id = 'transfer-audit-1'").run(),
+    ).rejects.toThrow();
+    await expect(
+      env.DB.prepare("DELETE FROM transfer_matches WHERE id = 'match-audit'").run(),
     ).rejects.toThrow();
   });
 });

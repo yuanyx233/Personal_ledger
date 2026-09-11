@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   APP_WORKER_SECRET_NAMES,
-  SYNC_WORKER_SECRET_NAMES,
   publicClientEnvSchema,
 } from "../../packages/domain/src/environment";
 
@@ -48,43 +47,13 @@ describe("checked-in environment files", () => {
     expect(Object.values(values).every((value) => value.startsWith("REPLACE_ME_"))).toBe(true);
   });
 
-  it("uses obvious placeholders for every local sync Worker secret", async () => {
-    const values = parseExampleFile(await readWorkspaceFile("workers/sync/.dev.vars.example"));
-
-    expect(Object.keys(values).sort()).toEqual([...SYNC_WORKER_SECRET_NAMES].sort());
-    expect(Object.values(values).every((value) => value.startsWith("REPLACE_ME_"))).toBe(true);
-  });
-
   it("declares every production secret as required in its Worker config", async () => {
     const appConfig = await readWorkspaceFile("apps/web/wrangler.jsonc");
-    const syncConfig = await readWorkspaceFile("workers/sync/wrangler.jsonc");
 
     expect(appConfig).toContain('"secrets"');
-    expect(syncConfig).toContain('"secrets"');
 
     for (const secretName of APP_WORKER_SECRET_NAMES) {
       expect(appConfig).toContain(`"${secretName}"`);
     }
-    for (const secretName of SYNC_WORKER_SECRET_NAMES) {
-      expect(syncConfig).toContain(`"${secretName}"`);
-    }
-  });
-
-  it("checks in the bounded at-least-hourly catch-up schedule", async () => {
-    const syncConfig = await readWorkspaceFile("workers/sync/wrangler.jsonc");
-
-    expect(syncConfig).toContain('"*/30 * * * *"');
-    expect(syncConfig).toContain('"SCHEDULED_SYNC_MAX_ITEMS"');
-    expect(syncConfig).toContain('"SCHEDULED_SYNC_MAX_PAGES"');
-    expect(syncConfig).toContain('"SCHEDULED_SYNC_MAX_RUNTIME_MS"');
-    expect(syncConfig).toContain('"SYNC_STALE_AFTER_MINUTES"');
-  });
-
-  it("keeps immediate manual sync on a private Worker RPC binding", async () => {
-    const appConfig = await readWorkspaceFile("apps/web/wrangler.jsonc");
-
-    expect(appConfig).toContain('"binding": "SYNC"');
-    expect(appConfig).toContain('"service": "personal-ledger-sync"');
-    expect(appConfig).toContain('"entrypoint": "SyncService"');
   });
 });

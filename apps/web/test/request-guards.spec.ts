@@ -22,14 +22,18 @@ beforeAll(async () => {
   validCsrfToken = await issueCsrfToken(IDENTITY, CSRF_KEY);
 });
 
-function apiRequest(method: string, headers: Record<string, string> = {}): Promise<Response> {
+function apiRequest(
+  method: string,
+  headers: Record<string, string> = {},
+  path = "/transactions",
+): Promise<Response> {
   const init: RequestInit = { headers, method };
 
   if (method !== "GET" && method !== "HEAD") {
     init.body = "{}";
   }
 
-  return worker.fetch(new Request("https://ledger.example/api/v1/transactions", init), env);
+  return worker.fetch(new Request(`https://ledger.example/api/v1${path}`, init), env);
 }
 
 function validWriteHeaders(token = validCsrfToken): Record<string, string> {
@@ -63,13 +67,17 @@ describe("same-origin browser API guard", () => {
   });
 
   it("allows a same-origin safe request without a CSRF token", async () => {
-    const response = await apiRequest("GET", {
-      Origin: "https://ledger.example",
-      "Sec-Fetch-Site": "same-origin",
-    });
+    const response = await apiRequest(
+      "GET",
+      {
+        Origin: "https://ledger.example",
+        "Sec-Fetch-Site": "same-origin",
+      },
+      "/reports/trends",
+    );
 
-    expect(response.status).toBe(503);
-    await expect(response.json()).resolves.toMatchObject({ error: { code: "APP_NOT_READY" } });
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "NOT_FOUND" } });
   });
 
   it("requires an exact Origin on every write", async () => {
@@ -145,8 +153,10 @@ describe("same-origin browser API guard", () => {
     async (method) => {
       const response = await apiRequest(method, validWriteHeaders());
 
-      expect(response.status).toBe(503);
-      await expect(response.json()).resolves.toMatchObject({ error: { code: "APP_NOT_READY" } });
+      expect(response.status).toBe(method === "POST" ? 422 : 405);
+      await expect(response.json()).resolves.toMatchObject({
+        error: { code: method === "POST" ? "VALIDATION_ERROR" : "METHOD_NOT_ALLOWED" },
+      });
     },
   );
 });

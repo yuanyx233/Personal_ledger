@@ -5,10 +5,11 @@ const CONTENT_SECURITY_POLICY = [
   "font-src 'self'",
   "form-action 'self'",
   "frame-ancestors 'none'",
+  "frame-src 'none'",
   "img-src 'self' data:",
   "object-src 'none'",
   "script-src 'self'",
-  "style-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
 ].join("; ");
 
 export function applySecurityHeaders(response: Response, noStore: boolean): Response {

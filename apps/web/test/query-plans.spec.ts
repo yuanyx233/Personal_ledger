@@ -3,21 +3,32 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 const EXPECTED_INDEXES = [
   "idx_accounts_connection_enabled",
+  "idx_categories_normalized_name",
   "idx_connections_sync_candidates",
   "idx_connections_creation_request",
   "idx_import_batches_status_expiry",
   "idx_import_rows_fingerprint",
+  "idx_import_rows_merged_transaction",
+  "idx_import_rows_resolution_batch",
+  "idx_subscription_occurrences_subscription_date",
+  "idx_subscriptions_due",
   "idx_sync_events_status_received",
   "idx_sync_events_connection_pending",
   "idx_sync_runs_one_active_connection",
   "idx_sync_runs_retry_due",
   "idx_sync_run_requests_run",
   "idx_transactions_account_date",
+  "idx_transactions_amount",
   "idx_transactions_category_date",
   "idx_transactions_filter_state_date",
+  "idx_transactions_normalized_merchant_date",
   "idx_transactions_pending_link",
+  "idx_transactions_report_posted_date",
   "idx_transactions_report_posted_currency_date",
   "idx_transactions_review_queue",
+  "idx_transactions_transfer_matching",
+  "idx_transfer_matches_active_left",
+  "idx_transfer_matches_active_right",
 ] as const;
 
 beforeAll(async () => {
@@ -110,6 +121,39 @@ describe("D1 query plans", () => {
       "idx_transactions_filter_state_date",
       ["POSTED", "PLAID", "RULE"],
     );
+    await expectIndex(
+      `SELECT raw_description FROM transactions
+       ORDER BY amount_minor DESC, id DESC LIMIT 100`,
+      "idx_transactions_amount",
+    );
+  });
+
+  it("keeps the complete report population on range and active-transfer indexes", async () => {
+    const plan = await queryPlan(
+      `SELECT transactions.id
+       FROM transactions
+       LEFT JOIN categories ON categories.id = transactions.category_id
+       WHERE transactions.status = 'POSTED'
+         AND transactions.posted_date BETWEEN ? AND ?
+         AND NOT EXISTS (
+           SELECT 1 FROM transfer_matches AS left_match
+           WHERE left_match.status IN ('AUTO_CONFIRMED', 'CONFIRMED')
+             AND left_match.left_transaction_id = transactions.id
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM transfer_matches AS right_match
+           WHERE right_match.status IN ('AUTO_CONFIRMED', 'CONFIRMED')
+             AND right_match.right_transaction_id = transactions.id
+         )
+       ORDER BY transactions.posted_date, transactions.id`,
+      ["2026-01-01", "2026-12-31"],
+    );
+
+    expect(plan).toMatch(/INDEX idx_transactions_report_posted_date\b/);
+    expect(plan).toMatch(/INDEX idx_transfer_matches_active_left\b/);
+    expect(plan).toMatch(/INDEX idx_transfer_matches_active_right\b/);
+    expect(plan).not.toMatch(/\bSCAN (left_match|right_match)\b/);
+    expect(plan).not.toContain("USE TEMP B-TREE FOR ORDER BY");
   });
 
   it("indexes exact rules, review work, and pending linkage", async () => {
@@ -125,9 +169,27 @@ describe("D1 query plans", () => {
       "idx_transactions_review_queue",
     );
     await expectIndex(
+      `SELECT id FROM transactions
+       WHERE normalized_merchant = ?
+       ORDER BY posted_date DESC, id DESC LIMIT 50`,
+      "idx_transactions_normalized_merchant_date",
+      ["fixture merchant"],
+    );
+    await expectIndex(
       "SELECT id FROM transactions WHERE pending_transaction_id = ?",
       "idx_transactions_pending_link",
       ["pending-1"],
+    );
+  });
+
+  it("bounds transfer candidate lookup by exact value and date", async () => {
+    await expectIndex(
+      `SELECT id FROM transactions
+       WHERE status = 'POSTED' AND currency = ? AND amount_minor = ?
+         AND posted_date BETWEEN ? AND ?
+       ORDER BY posted_date, id`,
+      "idx_transactions_transfer_matching",
+      ["CAD", 10_000, "2026-07-10", "2026-07-13"],
     );
   });
 

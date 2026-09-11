@@ -1,4 +1,4 @@
-import { ConnectionCreationRepository, createRepositories } from "@ledger/persistence";
+import { TransactionRepository } from "@ledger/persistence";
 import { applyD1Migrations, env } from "cloudflare:test";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
@@ -8,9 +8,13 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await env.DB.batch(
-    ["transactions", "categories", "accounts", "connections", "connection_requests"].map((table) =>
-      env.DB.prepare(`DELETE FROM ${table}`),
-    ),
+    [
+      "transactions",
+      "categories WHERE system_key IS NULL",
+      "accounts",
+      "connections",
+      "connection_requests",
+    ].map((table) => env.DB.prepare(`DELETE FROM ${table}`)),
   );
 
   await env.DB.batch([
@@ -60,19 +64,10 @@ beforeEach(async () => {
 
 describe("repositories against D1", () => {
   it("runs prepared reads and maps database rows", async () => {
-    const repositories = createRepositories(env.DB);
+    const transactions = new TransactionRepository(env.DB);
 
-    await expect(repositories.connections.findByPlaidItemId("plaid-item-1")).resolves.toMatchObject(
-      {
-        id: "connection-1",
-        status: "HEALTHY",
-      },
-    );
-    await expect(repositories.accounts.listEnabled("connection-1")).resolves.toMatchObject([
-      { enabled: true, id: "account-1" },
-    ]);
     await expect(
-      repositories.transactions.list({
+      transactions.list({
         accountId: "account-1",
         dateFrom: "2026-01-01",
         dateTo: "2026-01-31",
@@ -81,81 +76,17 @@ describe("repositories against D1", () => {
   });
 
   it("treats filter text as data and rejects executable sort text", async () => {
-    const repositories = createRepositories(env.DB);
+    const transactions = new TransactionRepository(env.DB);
     const injectedId = "account-1' OR 1=1 --";
 
-    await expect(repositories.transactions.list({ accountId: injectedId })).resolves.toEqual([]);
+    await expect(transactions.list({ accountId: injectedId })).resolves.toEqual([]);
     await expect(
-      repositories.transactions.list({ sort: "POSTED_DATE_DESC; DROP TABLE transactions; --" }),
+      transactions.list({ sort: "POSTED_DATE_DESC; DROP TABLE transactions; --" }),
     ).rejects.toThrow();
 
     const table = await env.DB.prepare(
       "SELECT name FROM sqlite_schema WHERE type = 'table' AND name = 'transactions'",
     ).first<{ name: string }>();
     expect(table?.name).toBe("transactions");
-  });
-
-  it("reserves and replays one encrypted connection creation", async () => {
-    const repository = new ConnectionCreationRepository(env.DB);
-    const request = {
-      idempotencyKey: "connection-request-0001",
-      now: "2026-07-15T12:00:00.000Z",
-      requestFingerprint: "a".repeat(64),
-    };
-
-    await expect(repository.reserve(request)).resolves.toEqual({ kind: "STARTED" });
-    await expect(repository.reserve(request)).resolves.toEqual({ kind: "CONFLICT" });
-
-    const created = await repository.complete({
-      accounts: [
-        {
-          currency: "CAD",
-          displayName: "Daily Chequing",
-          id: "account-created-1",
-          mask: "1234",
-          plaidAccountId: "plaid-account-created-1",
-          subtype: "CHECKING",
-          type: "DEPOSITORY",
-        },
-      ],
-      connectionId: "connection-created-1",
-      encryptedAccessToken: {
-        ciphertext: new Uint8Array(17).fill(4),
-        iv: new Uint8Array(12).fill(5),
-        keyVersion: 1,
-      },
-      idempotencyKey: request.idempotencyKey,
-      institutionId: "ins-rbc",
-      institutionName: "Royal Bank of Canada",
-      now: request.now,
-      plaidItemId: "item-created-1",
-      requestFingerprint: request.requestFingerprint,
-    });
-
-    expect(created).toMatchObject({
-      accounts: [{ enabled: true, id: "account-created-1" }],
-      connection: { id: "connection-created-1", institutionId: "ins-rbc" },
-    });
-    await expect(repository.reserve(request)).resolves.toMatchObject({
-      connection: created,
-      kind: "REPLAY",
-    });
-    await expect(
-      repository.reserve({ ...request, requestFingerprint: "b".repeat(64) }),
-    ).resolves.toEqual({ kind: "CONFLICT" });
-
-    const secretRow = await env.DB.prepare(
-      `SELECT access_token_ciphertext, access_token_iv, token_key_version
-       FROM connections WHERE id = ?`,
-    )
-      .bind("connection-created-1")
-      .first<{
-        access_token_ciphertext: ArrayBuffer;
-        access_token_iv: ArrayBuffer;
-        token_key_version: number;
-      }>();
-    expect(new Uint8Array(secretRow!.access_token_ciphertext)).toEqual(new Uint8Array(17).fill(4));
-    expect(new Uint8Array(secretRow!.access_token_iv)).toEqual(new Uint8Array(12).fill(5));
-    expect(secretRow!.token_key_version).toBe(1);
   });
 });

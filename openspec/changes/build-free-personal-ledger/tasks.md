@@ -48,73 +48,107 @@
 
 ## 6. Ledger semantics and review decisions
 
-- [ ] 6.1 Write canonical-ledger tests that combine Plaid, manual, and CSV sources without duplicate identities or floating-point amounts.
-- [ ] 6.2 Implement manual transaction create/update/delete with validation, category/source provenance, audit timestamps, and 409 optimistic-conflict behavior.
-- [ ] 6.3 Write positive and negative transfer-matching fixtures covering card payments, two own chequing accounts, date boundaries, different currencies/amounts, multiple candidates, and external e-Transfers.
-- [ ] 6.4 Implement deterministic high-confidence transfer candidate generation and automatic matching using equal amount/currency, opposite direction, three-day window, and supporting evidence.
-- [ ] 6.5 Implement audited owner decisions to confirm, break, or ignore a transfer match and ensure manual decisions override later automation.
-- [ ] 6.6 Implement external e-Transfer handling that preserves unmatched inflow/outflow, displays only supplied payment metadata, and flags uncertain purpose/category for review.
-- [ ] 6.7 Write and implement refund semantics and whole-transaction marketplace behavior, including Amazon as one transaction/one category.
-- [ ] 6.8 Implement the filtered cursor-paginated transaction query/detail API with allowlisted filters/sorts and URL-reproducible query parameters.
+- [x] 6.1 Write canonical-ledger tests that combine Plaid, manual, and CSV sources without duplicate identities or floating-point amounts.
+- [x] 6.2 Implement manual transaction create/update/delete with validation, category/source provenance, audit timestamps, and 409 optimistic-conflict behavior.
+- [x] 6.3 Write positive and negative transfer-matching fixtures covering card payments, two own chequing accounts, date boundaries, different currencies/amounts, multiple candidates, and external e-Transfers.
+- [x] 6.4 Implement deterministic high-confidence transfer candidate generation and automatic matching using equal amount/currency, opposite direction, three-day window, and supporting evidence.
+- [x] 6.5 Implement audited owner decisions to confirm, break, or ignore a transfer match and ensure manual decisions override later automation.
+- [x] 6.6 Implement external e-Transfer handling that preserves unmatched inflow/outflow, displays only supplied payment metadata, and flags uncertain purpose/category for review.
+- [x] 6.7 Write and implement refund semantics and whole-transaction marketplace behavior, including Amazon as one transaction/one category.
+- [x] 6.8 Implement the filtered cursor-paginated transaction query/detail API with allowlisted filters/sorts and URL-reproducible query parameters.
 
 ## 7. Categories, merchant rules, and audit
 
-- [ ] 7.1 Seed a minimal editable category taxonomy plus protected system categories for unclassified and transfer states; test category-type invariants.
-- [ ] 7.2 Write tests for exact merchant normalization and the precedence `MANUAL > RULE > PLAID > UNCLASSIFIED`, including similar-but-not-equal merchant names.
-- [ ] 7.3 Implement deterministic normalization, mapped Plaid category ingestion, exact active merchant-rule matching, and categorization-source persistence.
-- [ ] 7.4 Implement “只改这一笔” as a transaction override with append-only old/new category/source audit.
-- [ ] 7.5 Implement “以后这个商户都这样” as a versioned exact rule that corrects the current transaction and applies only to future matching transactions by default.
-- [ ] 7.6 Implement merchant-rule list/create/update/deactivate endpoints with conflict preview and no unconfirmed historical batch rewrite.
-- [ ] 7.7 Implement the unified review-queue query/count for unclassified merchants, uncertain e-Transfers, ambiguous transfers, and rule conflicts.
-- [ ] 7.8 Add tests and API filters that enumerate merchants/transactions classified by owner rule versus Plaid automatic classification.
+- [x] 7.1 Seed a minimal editable category taxonomy plus protected system categories for unclassified and transfer states; test category-type invariants.
+- [x] 7.2 Write tests for exact merchant normalization and the precedence `MANUAL > RULE > PLAID > UNCLASSIFIED`, including similar-but-not-equal merchant names.
+- [x] 7.3 Implement deterministic normalization, mapped Plaid category ingestion, exact active merchant-rule matching, and categorization-source persistence.
+- [x] 7.4 Implement “只改这一笔” as a transaction override with append-only old/new category/source audit.
+- [x] 7.5 Implement “以后这个商户都这样” as a versioned exact rule that corrects the current transaction and applies only to future matching transactions by default.
+- [x] 7.6 Implement merchant-rule list/create/update/deactivate endpoints with conflict preview and no unconfirmed historical batch rewrite.
+- [x] 7.7 Implement the unified review-queue query/count for unclassified merchants, uncertain e-Transfers, ambiguous transfers, and rule conflicts.
+- [x] 7.8 Add tests and API filters that enumerate merchants/transactions classified by owner rule versus Plaid automatic classification.
 
 ## 8. Reporting engine and APIs
 
-- [ ] 8.1 Create reconciled report fixtures for posted/pending/removed, transfers, income, expense refunds, zero prior periods, empty months, CAD/USD, manual, and CSV transactions.
-- [ ] 8.2 Write failing tests for eligible-population rules and the exact income, net-spending, and net-cash-flow formulas by currency.
-- [ ] 8.3 Implement a shared report query layer using Toronto calendar month/quarter/year boundaries and safe custom ranges.
-- [ ] 8.4 Implement like-for-like previous-period/previous-year absolute and percentage comparisons with `N/A` on zero denominators.
-- [ ] 8.5 Implement category distribution, merchant ranking, account/category/merchant filters, and drill-down keys that reconcile to canonical transaction queries.
-- [ ] 8.6 Implement separate-currency response sections and prove no endpoint silently adds non-CAD amounts into CAD.
-- [ ] 8.7 Add report freshness metadata and integration tests that surface stale connections/last-success time.
+- [x] 8.1 Create reconciled report fixtures for posted/pending/removed, transfers, income, expense refunds, zero prior periods, empty months, CAD/USD, manual, and CSV transactions.
+- [x] 8.2 Write failing tests for eligible-population rules and the exact income, net-spending, and net-cash-flow formulas by currency.
+- [x] 8.3 Implement a shared report query layer using Toronto calendar month/quarter/year boundaries and safe custom ranges.
+- [x] 8.4 Implement like-for-like previous-period/previous-year absolute and percentage comparisons with `N/A` on zero denominators.
+- [x] 8.5 Implement category distribution, merchant ranking, account/category/merchant filters, and drill-down keys that reconcile to canonical transaction queries.
+- [x] 8.6 Implement separate-currency response sections and prove no endpoint silently adds non-CAD amounts into CAD.
+- [x] 8.7 Add report freshness metadata and integration tests that surface stale connections/last-success time.
 
 ## 9. Data import, export, and recovery
 
-- [ ] 9.1 Write hostile/edge CSV fixtures for encoding, oversized files/rows/columns, invalid dates/amounts/currencies, quoted delimiters, formulas, exact repeats, and suspected duplicates.
-- [ ] 9.2 Implement streaming/bounded CSV parsing, explicit column mapping, row validation, and an expiring no-write preview with valid/invalid/duplicate counts.
-- [ ] 9.3 Implement idempotent import commit using batch checksum and canonical row fingerprint, with row-level results and source provenance.
-- [ ] 9.4 Implement filtered transaction CSV export with stable headers, exact amount round-trip, provenance, and spreadsheet-formula neutralization tests.
-- [ ] 9.5 Implement schema-versioned complete JSON export containing all portable ledger/audit/rule/decision data and no secret/sync payload material.
-- [ ] 9.6 Implement a local restore command into an empty separate D1 database and verify transaction counts, audit links, rules, transfer decisions, and report totals reconcile.
-- [ ] 9.7 Add a destructive-migration guard that requires passing export/restore evidence before the documented remote migration step.
+- [x] 9.1 Write hostile/edge CSV fixtures for encoding, oversized files/rows/columns, invalid dates/amounts/currencies, quoted delimiters, formulas, exact repeats, and suspected duplicates.
+- [x] 9.2 Implement streaming/bounded CSV parsing, explicit column mapping, row validation, and an expiring no-write preview with valid/invalid/duplicate counts.
+- [x] 9.3 Implement idempotent import commit using batch checksum and canonical row fingerprint, with row-level results and source provenance.
+- [x] 9.4 Implement filtered transaction CSV export with stable headers, exact amount round-trip, provenance, and spreadsheet-formula neutralization tests.
+- [x] 9.5 Implement schema-versioned complete JSON export containing all portable ledger/audit/rule/decision data and no secret/sync payload material.
+- [x] 9.6 Implement a local restore command into an empty separate D1 database and verify transaction counts, audit links, rules, transfer decisions, and report totals reconcile.
+- [x] 9.7 Add a destructive-migration guard that requires passing export/restore evidence before the documented remote migration step.
 
 ## 10. Responsive product interface
 
-- [ ] 10.1 Build the accessible mobile bottom navigation and desktop sidebar shell with routes for overview, transactions, analysis, and settings.
-- [ ] 10.2 Implement shared loading, empty, error, stale, action-required, and offline states; ensure API data/exports are never cached by the Service Worker.
-- [ ] 10.3 Build the overview in priority order: sync health/repair, review count, current-month income/net spending/net cash flow, and six-month trend.
-- [ ] 10.4 Build the mobile transaction list and desktop table with URL-backed filters, source/status/category badges, pagination, and untrusted-text rendering.
-- [ ] 10.5 Build the transaction detail/edit surface for raw fields, classification provenance/audit, the two correction scopes, and transfer decisions.
-- [ ] 10.6 Build the review workflow for unclassified merchants, uncertain e-Transfers, ambiguous transfers, and rule conflicts without silent bulk changes.
-- [ ] 10.7 Build month/quarter/year/custom analysis views with period navigation, summary metrics, trend/category/merchant visualizations, accessible tables, and drill-down.
-- [ ] 10.8 Build settings for RBC/BMO connections/enabled accounts, repair/manual sync, categories/rules, manual entry, CSV preview/commit, and CSV/JSON exports.
-- [ ] 10.9 Add clear confirmations and impact text for Item removal, manual-transaction deletion, import discard, and other destructive actions.
+- [x] 10.1 Build the accessible mobile bottom navigation and desktop sidebar shell with routes for overview, transactions, analysis, and settings.
+- [x] 10.2 Implement shared loading, empty, error, stale, action-required, and offline states; ensure API data/exports are never cached by the Service Worker.
+- [x] 10.3 Build the overview in priority order: sync health/repair, review count, current-month income/net spending/net cash flow, and six-month trend.
+- [x] 10.4 Build the mobile transaction list and desktop table with URL-backed filters, source/status/category badges, pagination, and untrusted-text rendering.
+- [x] 10.5 Build the transaction detail/edit surface for raw fields, classification provenance/audit, the two correction scopes, and transfer decisions.
+- [x] 10.6 Build the review workflow for unclassified merchants, uncertain e-Transfers, ambiguous transfers, and rule conflicts without silent bulk changes.
+- [x] 10.7 Build month/quarter/year/custom analysis views with period navigation, summary metrics, trend/category/merchant visualizations, accessible tables, and drill-down.
+- [x] 10.8 Build settings for RBC/BMO connections/enabled accounts, repair/manual sync, categories/rules, manual entry, CSV preview/commit, and CSV/JSON exports.
+- [x] 10.9 Add clear confirmations and impact text for Item removal, manual-transaction deletion, import discard, and other destructive actions.
 
 ## 11. Verification and hardening
 
-- [ ] 11.1 Run unit, integration, contract, migration, report-reconciliation, security, and export/restore suites under coverage thresholds and fix every failure.
+- [x] 11.1 Run unit, integration, contract, migration, report-reconciliation, security, and export/restore suites under coverage thresholds and fix every failure.
 - [ ] 11.2 Run real-browser mobile/desktop end-to-end flows for first connection (Sandbox), sync, review, correction, manual entry, report drill-down, import, and export.
-- [ ] 11.3 Verify keyboard-only operation, focus order/visibility, labels, semantic landmarks/tables, reduced motion, contrast, zoom/reflow, and non-color-only meaning to WCAG 2.1 AA.
-- [ ] 11.4 Test XSS text, SQL injection inputs, CSRF, Access-token/JWT failures, forged/replayed webhooks, CSV formula injection, oversized requests, rate limits, and log redaction.
-- [ ] 11.5 Measure representative D1 query plans, Worker request/CPU counts, scheduled work, and storage against current free limits; document safe caps and failure behavior.
-- [ ] 11.6 Produce a verification report mapping every OpenSpec scenario to automated evidence or a clearly identified manual shadow-validation step.
+- [x] 11.3 Verify keyboard-only operation, focus order/visibility, labels, semantic landmarks/tables, reduced motion, contrast, zoom/reflow, and non-color-only meaning to WCAG 2.1 AA.
+- [x] 11.4 Test XSS text, SQL injection inputs, CSRF, Access-token/JWT failures, forged/replayed webhooks, CSV formula injection, oversized requests, rate limits, and log redaction.
+- [x] 11.5 Measure representative D1 query plans, Worker request/CPU counts, scheduled work, and storage against current free limits; document safe caps and failure behavior.
+- [x] 11.6 Produce a verification report mapping every OpenSpec scenario to automated evidence or a clearly identified manual shadow-validation step.
 
 ## 12. Authorized deployment and live-data validation
 
-- [ ] 12.1 Prepare (without executing) the free `workers.dev` deployment runbook, D1 migrations, Worker secret list, Cloudflare Access deny-by-default policy, Plaid Sandbox URLs, rollback, and no-auto-paid guardrails.
-- [ ] 12.2 After separate explicit user authorization, deploy preview Workers/D1, configure the single owner email and secrets, and verify Access JWT enforcement before exposing any API.
+- [x] 12.1 Prepare (without executing) the free `workers.dev` deployment runbook, D1 migrations, Worker secret list, Cloudflare Access deny-by-default policy, Plaid Sandbox URLs, rollback, and no-auto-paid guardrails.
+- [x] 12.2 After separate explicit user authorization, deploy preview Workers/D1, configure the single owner email and secrets, and verify Access JWT enforcement before exposing any API.
 - [ ] 12.3 Verify the deployed application entirely with Plaid Sandbox, including public webhook isolation, scheduled catch-up, manual refresh, PWA cache policy, export, and rollback.
 - [ ] 12.4 After separate explicit user authorization and confirmation of current Plaid Trial terms, connect RBC and BMO once each and select only chequing/credit-card accounts.
 - [ ] 12.5 Run the 14-day shadow validation and reconcile at least 30 sampled live transactions for omissions, duplicates, pending-to-posted, card payments, e-Transfers, merchant fields, and report totals.
 - [ ] 12.6 Record any live-data contradiction as an OpenSpec update before changing implementation; only mark personal-use readiness after all blocking discrepancies are resolved.
-- [ ] 12.7 Document monthly JSON export/restore practice and the optional future custom-domain route/Access/Plaid-URL migration without purchasing or configuring a domain.
+- [x] 12.7 Document monthly JSON export/restore practice and the optional future custom-domain route/Access/Plaid-URL migration without purchasing or configuring a domain.
+
+## 13. Quick entry and category confirmation
+
+- [x] 13.1 Write failing contract/domain/schema tests for optional manual category, derived merchant normalization, bounded category suggestions, owner category creation uniqueness, and AJAX session-expiry recovery.
+- [x] 13.2 Implement the category normalized-name migration, prepared category create/query persistence, quick manual classification metadata, suggestion API, and exact-rule confirmation without silently changing history.
+- [x] 13.3 Build the dedicated `/add` flow with Toronto/CAD/outflow/`RBC Credit` defaults, editable fields, save-first confirmation, two suggestions, existing-category search, explicit new-category confirmation, and defer-to-review behavior.
+- [x] 13.4 Add the five-item responsive navigation plus installable manifest/icons with `/add` start URL, and prove no financial draft/API/export data enters browser storage or Cache Storage.
+
+## 14. RBC CSV adapter and existing-record reconciliation
+
+- [x] 14.1 Write failing RBC Visa/Chequing adapter tests for exact headers, M/D/YYYY, signed CAD/USD amounts, description joining, mixed/invalid rows, account-number exclusion, canonical checksum, and occurrence-ordinal row identity.
+- [x] 14.2 Implement `RBC_CA_V1` preview detection/mapping and the no-account-number boundary, then update import preview UI to show adapter/account labels without exposing column B.
+- [x] 14.3 Write failing one-to-one reconciliation tests for exact account/amount/currency/direction, merchant/date evidence, subscription occurrences, multiple candidates, amount changes, rows beyond the first 100, concurrency, and repeated files.
+- [x] 14.4 Implement link-style auto/owner merge provenance on import rows, complete review-row decisions, atomic commit revalidation, and imported/merged/skipped UI summaries without changing the canonical transaction source/category/description/version.
+
+## 15. Subscription plans and generated occurrences
+
+- [x] 15.1 Write failing schema and pure-domain tests for plan/occurrence invariants, Toronto calendar conversion, month-end clamping, leap years, monthly/yearly advance, status transitions, and due indexes; then add the ordered migration.
+- [x] 15.2 Implement strict API contracts plus prepared, versioned subscription candidate/list/create/update persistence with active-expense category validation and guarded resume behavior.
+- [x] 15.3 Write and implement idempotent bounded due generation in the app Worker daily scheduled handler, creating occurrence-linked `POSTED/MANUAL` transactions and proving retries, catch-up, pause/cancel, edits, and `NOT_CHARGED` behavior.
+- [x] 15.4 Build `/subscriptions` candidate confirmation, manual creation, plan management, next-charge/status display, and one-occurrence “未发生” flow with accessible mobile/desktop states.
+- [x] 15.5 Upgrade transaction provenance, filtered CSV, full JSON v2/v1 restore compatibility, restore evidence, and report reconciliation for subscriptions and import-match links.
+
+## 16. Integrated verification and prepared production configuration
+
+- [x] 16.1 Run focused security tests for category/merchant XSS, SQL fragments, CSRF, request limits, account-number/log/export redaction, exact cents, and expired Access AJAX recovery.
+- [x] 16.2 Run real-browser iPhone-size and desktop flows for quick entry, immediate/deferred category confirmation, installable `/add`, subscription management, RBC preview, and import auto/manual merge with keyboard/accessibility checks.
+- [x] 16.3 Run the complete repository verification plus export/restore/report reconciliation and update the scenario-to-evidence verification report with every new OpenSpec requirement.
+- [x] 16.4 Prepare, but do not execute, the Cloudflare Access global/application/policy one-month session configuration and trusted-device verification steps; retain deny-by-default owner-only access and require separate remote-change authorization.
+
+## 17. Owner-managed transfer taxonomy and historical EMT resolution
+
+- [x] 17.1 Write failing schema/restore tests, then add an ordered migration and recovery validation that allow editable custom `TRANSFER` categories while keeping both system categories immutable and rejecting custom `UNCLASSIFIED` categories.
+- [x] 17.2 After explicit owner authorization, apply the migration, create the editable `EMT` transfer category, and atomically classify only the current unresolved historical `E-TRANSFER`/`ETRANSFER` rows without a merchant rule; verify counts, audit entries, report exclusion, and rollback evidence.

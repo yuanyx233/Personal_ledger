@@ -3,7 +3,7 @@ import { createStructuredLogger } from "@ledger/domain/logging";
 import { describe, expect, it } from "vitest";
 
 import { createAppWorker, createConfiguredAccessGate, type AppEnv } from "../worker/index";
-import { verifyCsrfToken } from "../worker/security/csrf";
+import { issueCsrfToken, verifyCsrfToken } from "../worker/security/csrf";
 
 const IDENTITY = {
   email: "owner@example.invalid",
@@ -21,6 +21,57 @@ const env = {
 const worker = createAppWorker(() => Promise.resolve(IDENTITY));
 
 describe("authenticated app Worker routing", () => {
+  it("has no bank, subscription-candidate, transfer-decision or review API", async () => {
+    for (const path of [
+      "/connections",
+      "/sync-runs",
+      "/plaid/link-tokens",
+      "/subscription-candidates",
+      "/review-queue",
+      "/transactions/transaction-example/transfer-decision",
+    ]) {
+      const response = await worker.fetch(new Request(`https://ledger.example/api/v1${path}`), env);
+      expect(response.status).toBe(404);
+    }
+    expect(worker).toHaveProperty("scheduled");
+  });
+
+  it("rejects unsupported methods on the remaining API surface", async () => {
+    const token = await issueCsrfToken(IDENTITY, env.CSRF_HMAC_KEY);
+    for (const [path, method] of [
+      ["/accounts", "POST"],
+      ["/categories", "DELETE"],
+      ["/reports/spending", "POST"],
+      ["/reports/cash-flow", "POST"],
+      ["/exports/transactions.csv", "POST"],
+      ["/exports/data.json", "POST"],
+      ["/merchant-rule-previews", "POST"],
+      ["/transactions/transaction-example", "PUT"],
+      ["/transactions/transaction-example/category-suggestions", "POST"],
+      ["/transactions/transaction-example/merchant-rule", "POST"],
+      ["/merchant-rules/example", "PUT"],
+    ] as const) {
+      const response = await worker.fetch(
+        new Request(`https://ledger.example/api/v1${path}`, {
+          method,
+          body: "{}",
+          headers: {
+            "Content-Type": "application/json",
+            Origin: "https://ledger.example",
+            "Sec-Fetch-Site": "same-origin",
+            "Sec-Fetch-Mode": "cors",
+            "X-CSRF-Token": token,
+          },
+        }),
+        env,
+      );
+      expect(response.status, path).toBe(405);
+    }
+    const response = await worker.fetch(new Request("https://ledger.example/api/v1/accounts"), env);
+    expect(response.status).toBe(500);
+    expect(await response.json()).toMatchObject({ error: { code: "INTERNAL_ERROR" } });
+  });
+
   it("returns the identity, timezone, and a session-bound CSRF token", async () => {
     const response = await worker.fetch(new Request("https://ledger.example/api/v1/session"), env);
 
@@ -46,14 +97,37 @@ describe("authenticated app Worker routing", () => {
     ).resolves.toBe(false);
   });
 
-  it("fails closed for unfinished API routes after authentication", async () => {
+  it("fails closed for removed API routes after authentication", async () => {
     const response = await worker.fetch(
-      new Request("https://ledger.example/api/v1/transactions"),
+      new Request("https://ledger.example/api/v1/reports/trends"),
       env,
     );
 
-    expect(response.status).toBe(503);
-    await expect(response.json()).resolves.toMatchObject({ error: { code: "APP_NOT_READY" } });
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "NOT_FOUND" } });
+  });
+
+  it("validates report queries and sanitizes unexpected report persistence failures", async () => {
+    const invalid = await worker.fetch(
+      new Request("https://ledger.example/api/v1/reports/cash-flow?grain=MONTH&period=invalid"),
+      env,
+    );
+    expect(invalid.status).toBe(422);
+    await expect(invalid.json()).resolves.toMatchObject({ error: { code: "VALIDATION_ERROR" } });
+
+    for (const route of ["cash-flow", "spending"]) {
+      const response = await worker.fetch(
+        new Request(`https://ledger.example/api/v1/reports/${route}?grain=MONTH&period=2026-01`),
+        env,
+      );
+      expect(response.status).toBe(500);
+      await expect(response.json()).resolves.toEqual({
+        error: {
+          code: "INTERNAL_ERROR",
+          message: "The request could not be completed.",
+        },
+      });
+    }
   });
 
   it("delegates authenticated non-API requests to the static asset binding", async () => {

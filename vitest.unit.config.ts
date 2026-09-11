@@ -4,11 +4,7 @@ export default defineConfig({
   test: {
     coverage: {
       exclude: ["**/*.test.ts", "packages/persistence/src/connection-creation.ts"],
-      include: [
-        "packages/domain/src/**/*.ts",
-        "packages/persistence/src/**/*.ts",
-        "packages/plaid/src/**/*.ts",
-      ],
+      include: ["packages/domain/src/**/*.ts", "packages/persistence/src/**/*.ts"],
       provider: "v8",
       reporter: ["text", "json-summary"],
       reportsDirectory: "coverage/unit",
@@ -20,9 +16,9 @@ export default defineConfig({
       },
     },
     include: [
+      "apps/web/src/**/*.test.{ts,tsx}",
       "packages/domain/src/**/*.test.ts",
       "packages/persistence/src/**/*.test.ts",
-      "packages/plaid/src/**/*.test.ts",
       "tests/config/**/*.test.ts",
     ],
   },

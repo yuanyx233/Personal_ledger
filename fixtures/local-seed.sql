@@ -46,7 +46,7 @@ INSERT OR IGNORE INTO transactions (
   category_id, categorization_source, category_rule_id,
   needs_review, created_at, updated_at, version
 ) VALUES (
-  'fixture-transaction-grocery', 'PLAID', 'fixture-account-chequing',
+  'transaction-fixture-grocery', 'PLAID', 'fixture-account-chequing',
   'fixture-plaid-transaction-grocery', 'POSTED', '2026-01-14', '2026-01-15',
   1234, 'OUTFLOW', 'CAD', '12.34', 'Fixture grocery purchase', 'Fixture Market',
   'fixture-category-shopping', 'RULE', 'fixture-rule-market', 0,
@@ -54,12 +54,12 @@ INSERT OR IGNORE INTO transactions (
 );
 
 INSERT OR IGNORE INTO transactions (
-  id, source, account_id, status, authorized_date, posted_date,
+  id, source, account_label, status, authorized_date, posted_date,
   amount_minor, direction, currency, raw_description, merchant_name,
   category_id, categorization_source, needs_review,
   created_at, updated_at, version
 ) VALUES (
-  'fixture-transaction-income', 'MANUAL', 'fixture-account-chequing', 'POSTED',
+  'transaction-fixture-income', 'MANUAL', 'Fixture Chequing', 'POSTED',
   '2026-01-31', '2026-01-31', 500000, 'INFLOW', 'CAD',
   'Fixture salary', 'Fixture Employer', 'fixture-category-income', 'MANUAL', 0,
   '2026-01-31T17:00:00.000Z', '2026-01-31T17:00:00.000Z', 1

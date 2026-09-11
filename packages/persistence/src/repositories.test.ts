@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  AccountRepository,
-  ConnectionRepository,
+  TransactionCsvExportPersistenceError,
+  TransactionQueryError,
   TransactionRepository,
-  createRepositories,
 } from "./repositories";
 
 interface RecordedQuery {
@@ -29,6 +28,14 @@ function createRecordingDatabase({
   const queuedAllResults = allResultsSequence ? [...allResultsSequence] : undefined;
   const queuedFirstResults = firstResultsSequence ? [...firstResultsSequence] : undefined;
   const database = {
+    batch(statements: D1PreparedStatement[]) {
+      return Promise.resolve(
+        statements.map((_, index) => ({
+          meta: { changes: index === 0 ? runChanges : 1 },
+          results: index === 0 && runChanges === 1 && firstResult ? [firstResult] : [],
+        })),
+      );
+    },
     prepare(sql: string) {
       const query: RecordedQuery = { bindings: [], sql };
       queries.push(query);
@@ -48,34 +55,6 @@ function createRecordingDatabase({
   return { database, queries };
 }
 
-const CONNECTION_ROW = {
-  access_token_ciphertext: "access-sandbox-fixture-token-that-must-never-leak",
-  access_token_iv: "private-iv-material",
-  id: "connection-1",
-  institution_id: "ins_42",
-  institution_name: "Fixture Bank",
-  last_error_code: null,
-  last_success_at: "2026-01-15T12:00:00.000Z",
-  plaid_item_id: "item-1",
-  status: "HEALTHY",
-  sync_cursor: "cursor-1",
-  token_key_version: 7,
-  version: 2,
-};
-
-const ACCOUNT_ROW = {
-  connection_id: "connection-1",
-  currency: "CAD",
-  display_name: "Daily Chequing",
-  enabled: 1,
-  id: "account-1",
-  mask: "1234",
-  plaid_account_id: "plaid-account-1",
-  subtype: "CHECKING",
-  type: "DEPOSITORY",
-  version: 1,
-};
-
 const TRANSACTION_ROW = {
   account_id: "account-1",
   account_label: null,
@@ -83,13 +62,20 @@ const TRANSACTION_ROW = {
   authorized_date: "2026-01-14",
   categorization_source: "PLAID",
   category_id: "category-1",
+  category_rule_id: null,
   created_at: "2026-01-15T12:00:00.000Z",
   currency: "CAD",
   direction: "OUTFLOW",
   id: "transaction-1",
   merchant_name: "Fixture Merchant",
   needs_review: 1,
+  normalized_merchant: "fixture merchant",
+  payment_metadata_json:
+    '{"payee":"Fixture Payee","payer":"","paymentMethod":"INTERAC","reason":"must not leak","referenceNumber":"reference-1"}',
   pending_transaction_id: null,
+  plaid_pfc_confidence: "HIGH",
+  plaid_pfc_detailed: "GENERAL_MERCHANDISE_SUPERSTORES",
+  plaid_pfc_primary: "GENERAL_MERCHANDISE",
   plaid_transaction_id: "plaid-transaction-1",
   posted_date: "2026-01-15",
   raw_description: "Fixture purchase",
@@ -101,149 +87,6 @@ const TRANSACTION_ROW = {
 };
 
 describe("typed prepared-statement repositories", () => {
-  it("creates the reviewed repository boundary", () => {
-    const { database } = createRecordingDatabase();
-    const repositories = createRepositories(database);
-
-    expect(repositories.accounts).toBeInstanceOf(AccountRepository);
-    expect(repositories.connections).toBeInstanceOf(ConnectionRepository);
-    expect(repositories.transactions).toBeInstanceOf(TransactionRepository);
-  });
-
-  it("binds Plaid Item identity and maps connection rows", async () => {
-    const { database, queries } = createRecordingDatabase({ firstResult: CONNECTION_ROW });
-    const itemId = "item' OR 1=1 --";
-
-    const result = await new ConnectionRepository(database).findByPlaidItemId(itemId);
-
-    expect(queries[0]!.sql).not.toContain(itemId);
-    expect(queries[0]!.bindings).toEqual([itemId]);
-    expect(result).toEqual({
-      id: "connection-1",
-      institutionId: "ins_42",
-      institutionName: "Fixture Bank",
-      lastErrorCode: null,
-      lastSuccessAt: "2026-01-15T12:00:00.000Z",
-      plaidItemId: "item-1",
-      status: "HEALTHY",
-      syncCursor: "cursor-1",
-      version: 2,
-    });
-    expect(queries[0]!.sql).not.toContain("access_token");
-    expect(queries[0]!.sql).not.toContain("token_key_version");
-    expect(JSON.stringify(result)).not.toContain("fixture-token-that-must-never-leak");
-    expect(JSON.stringify(result)).not.toContain("private-iv-material");
-  });
-
-  it("returns null when a prepared connection lookup has no row", async () => {
-    const { database } = createRecordingDatabase();
-
-    await expect(
-      new ConnectionRepository(database).findByPlaidItemId("missing-item"),
-    ).resolves.toBe(null);
-  });
-
-  it("allowlists sync status and binds candidate limits", async () => {
-    const recording = createRecordingDatabase({ allResults: [CONNECTION_ROW] });
-    const repository = new ConnectionRepository(recording.database);
-
-    await expect(
-      repository.listSyncCandidates({
-        before: "2026-01-15T12:00:00.000Z",
-        status: "HEALTHY' OR 1=1 --",
-      }),
-    ).rejects.toThrow();
-    expect(recording.queries).toHaveLength(0);
-
-    const result = await repository.listSyncCandidates({
-      before: "2026-01-15T12:00:00.000Z",
-      limit: 10,
-      status: "HEALTHY",
-    });
-    expect(recording.queries[0]!.bindings).toEqual(["HEALTHY", "2026-01-15T12:00:00.000Z", 10]);
-    expect(result[0]?.id).toBe("connection-1");
-
-    await repository.listSyncCandidates({
-      before: "2026-01-15T12:00:00.000Z",
-      status: "HEALTHY",
-    });
-    expect(recording.queries[1]!.bindings).toEqual(["HEALTHY", "2026-01-15T12:00:00.000Z", 25]);
-  });
-
-  it("binds account identity and maps integer booleans", async () => {
-    const recording = createRecordingDatabase({ allResults: [ACCOUNT_ROW] });
-    const connectionId = "connection' UNION SELECT 1 --";
-
-    const result = await new AccountRepository(recording.database).listEnabled(connectionId);
-
-    expect(recording.queries[0]!.sql).not.toContain(connectionId);
-    expect(recording.queries[0]!.bindings).toEqual([connectionId]);
-    expect(result[0]).toMatchObject({ enabled: true, id: "account-1", subtype: "CHECKING" });
-
-    const disabled = createRecordingDatabase({ allResults: [{ ...ACCOUNT_ROW, enabled: 0 }] });
-    await expect(
-      new AccountRepository(disabled.database).listEnabled("connection-1"),
-    ).resolves.toMatchObject([{ enabled: false }]);
-  });
-
-  it("builds the connection/account read model without secret columns", async () => {
-    const secondConnection = {
-      ...CONNECTION_ROW,
-      id: "connection-2",
-      institution_id: "ins_43",
-      plaid_item_id: "item-2",
-    };
-    const recording = createRecordingDatabase({
-      allResultsSequence: [[CONNECTION_ROW, secondConnection], [ACCOUNT_ROW]],
-    });
-
-    const result = await new ConnectionRepository(recording.database).listWithAccounts();
-
-    expect(result).toMatchObject([
-      { accounts: [{ id: "account-1" }], connection: { id: "connection-1" } },
-      { accounts: [], connection: { id: "connection-2" } },
-    ]);
-    expect(recording.queries.map(({ sql }) => sql).join("\n")).not.toContain("access_token");
-  });
-
-  it("updates account enablement with optimistic version checks", async () => {
-    const updated = createRecordingDatabase({
-      firstResult: { ...ACCOUNT_ROW, enabled: 0, version: 2 },
-    });
-    await expect(
-      new AccountRepository(updated.database).updateEnabled({
-        enabled: false,
-        id: "account-1",
-        now: "2026-07-15T12:00:00.000Z",
-        version: 1,
-      }),
-    ).resolves.toMatchObject({ account: { enabled: false, version: 2 }, kind: "UPDATED" });
-    expect(updated.queries[0]!.bindings).toEqual([0, "2026-07-15T12:00:00.000Z", "account-1", 1]);
-
-    const conflict = createRecordingDatabase({
-      firstResult: { ...ACCOUNT_ROW, version: 3 },
-      runChanges: 0,
-    });
-    await expect(
-      new AccountRepository(conflict.database).updateEnabled({
-        enabled: true,
-        id: "account-1",
-        now: "2026-07-15T12:00:00.000Z",
-        version: 1,
-      }),
-    ).resolves.toEqual({ currentVersion: 3, kind: "VERSION_CONFLICT" });
-
-    const missing = createRecordingDatabase({ firstResult: null, runChanges: 0 });
-    await expect(
-      new AccountRepository(missing.database).updateEnabled({
-        enabled: true,
-        id: "account-missing",
-        now: "2026-07-15T12:00:00.000Z",
-        version: 1,
-      }),
-    ).resolves.toEqual({ kind: "NOT_FOUND" });
-  });
-
   it("builds filter SQL only from fixed fragments and binds every external value", async () => {
     const recording = createRecordingDatabase({ allResults: [TRANSACTION_ROW] });
     const accountId = "account' OR 1=1 --";
@@ -267,6 +110,7 @@ describe("typed prepared-statement repositories", () => {
     expect(query.sql).toContain("ORDER BY amount_minor DESC, id DESC LIMIT ?");
     expect(query.bindings).toEqual([
       accountId,
+      accountId,
       "category-1",
       "PLAID",
       "CAD",
@@ -279,10 +123,145 @@ describe("typed prepared-statement repositories", () => {
     ]);
     expect(result[0]).toMatchObject({
       amountMinor: 1234,
+      categoryRuleId: null,
       id: "transaction-1",
       needsReview: true,
+      normalizedMerchant: "fixture merchant",
+      paymentMetadata: {
+        payee: "Fixture Payee",
+        payer: "",
+        paymentMethod: "INTERAC",
+        referenceNumber: "reference-1",
+      },
+      plaidPersonalFinanceCategory: {
+        confidenceLevel: "HIGH",
+        detailed: "GENERAL_MERCHANDISE_SUPERSTORES",
+        primary: "GENERAL_MERCHANDISE",
+      },
       version: 3,
     });
+    expect(JSON.stringify(result[0])).not.toContain("must not leak");
+  });
+
+  it("binds the canonical net-spending drill-down population and scopes its cursor", async () => {
+    const recording = createRecordingDatabase({
+      allResults: [TRANSACTION_ROW, { ...TRANSACTION_ROW, id: "transaction-0" }],
+    });
+    const normalizedMerchant = "merchant' OR 1=1 --";
+    const repository = new TransactionRepository(recording.database);
+
+    const firstPage = await repository.listPage({
+      currency: "CAD",
+      dateFrom: "2026-01-01",
+      dateTo: "2026-01-31",
+      normalizedMerchant,
+      pageSize: 1,
+      reportMetric: "NET_SPENDING",
+    });
+
+    const query = recording.queries[0]!;
+    expect(query.sql).not.toContain(normalizedMerchant);
+    expect(query.sql).toContain("normalized_merchant = ?");
+    expect(query.sql).toContain("report_category.kind = 'EXPENSE'");
+    expect(query.sql).toContain("status = 'POSTED'");
+    expect(query.sql).toContain("active_match.status IN ('AUTO_CONFIRMED', 'CONFIRMED')");
+    expect(query.bindings).toEqual(["CAD", "2026-01-01", "2026-01-31", normalizedMerchant, 2]);
+    expect(firstPage.nextCursor).toMatch(/^[A-Za-z0-9_-]+$/);
+
+    await expect(
+      new TransactionRepository(createRecordingDatabase().database).listPage({
+        currency: "CAD",
+        cursor: firstPage.nextCursor!,
+        dateFrom: "2026-01-01",
+        dateTo: "2026-01-31",
+        merchantMissing: true,
+        pageSize: 1,
+        reportMetric: "NET_SPENDING",
+      }),
+    ).rejects.toEqual(new TransactionQueryError("INVALID_CURSOR"));
+  });
+
+  it("exports the same prepared filter population with account, category, and rule provenance", async () => {
+    const exportRow = {
+      ...TRANSACTION_ROW,
+      category_name: "Food",
+      category_rule_display_merchant: "Fixture Merchant",
+      export_account_label: "Daily Chequing",
+    };
+    const recording = createRecordingDatabase({ allResults: [exportRow] });
+    const normalizedMerchant = "merchant' OR 1=1 --";
+
+    const result = await new TransactionRepository(recording.database).listForCsvExport({
+      accountId: "account-1",
+      categorizationSource: "PLAID",
+      categoryId: "category-1",
+      currency: "CAD",
+      dateFrom: "2026-01-01",
+      dateTo: "2026-01-31",
+      needsReview: true,
+      normalizedMerchant,
+      reportMetric: "NET_SPENDING",
+      sort: "AMOUNT_DESC",
+      source: "PLAID",
+      status: "POSTED",
+    });
+
+    const query = recording.queries[0]!;
+    expect(query.sql).not.toContain(normalizedMerchant);
+    expect(query.sql).toContain("WITH filtered_transactions AS");
+    expect(query.sql).toContain("LEFT JOIN accounts");
+    expect(query.sql).toContain("LEFT JOIN categories");
+    expect(query.sql).toContain("LEFT JOIN merchant_rules");
+    expect(query.sql).toContain("report_category.kind = 'EXPENSE'");
+    expect(query.sql).toContain(
+      "ORDER BY filtered_transactions.amount_minor DESC, filtered_transactions.id DESC",
+    );
+    expect(query.bindings).toEqual([
+      "account-1",
+      "account-1",
+      "category-1",
+      "PLAID",
+      "CAD",
+      "2026-01-01",
+      "2026-01-31",
+      1,
+      normalizedMerchant,
+      "PLAID",
+      "POSTED",
+      10_001,
+    ]);
+    expect(result).toEqual([
+      expect.objectContaining({
+        accountLabel: "Daily Chequing",
+        categoryName: "Food",
+        categoryRuleDisplayMerchant: "Fixture Merchant",
+        id: "transaction-1",
+      }),
+    ]);
+  });
+
+  it("refuses pagination state and the 10,001st CSV export row without returning a truncation", async () => {
+    const invalid = createRecordingDatabase();
+    await expect(
+      new TransactionRepository(invalid.database).listForCsvExport({ pageSize: 10 }),
+    ).rejects.toThrow();
+    await expect(
+      new TransactionRepository(invalid.database).listForCsvExport({ cursor: "eyJ2IjoxfQ" }),
+    ).rejects.toThrow();
+    expect(invalid.queries).toHaveLength(0);
+
+    const oversized = createRecordingDatabase({
+      allResults: Array.from({ length: 10_001 }, (_, index) => ({
+        ...TRANSACTION_ROW,
+        category_name: null,
+        category_rule_display_merchant: null,
+        export_account_label: "Daily Chequing",
+        id: `transaction-${index}`,
+      })),
+    });
+    await expect(
+      new TransactionRepository(oversized.database).listForCsvExport({}),
+    ).rejects.toEqual(new TransactionCsvExportPersistenceError("ROW_LIMIT_EXCEEDED"));
   });
 
   it("rejects sort fragments, unknown filters, reversed ranges, and oversized pages", async () => {
@@ -317,5 +296,120 @@ describe("typed prepared-statement repositories", () => {
     await repository.list({ dateTo: "2026-01-31" });
     expect(recording.queries[1]!.bindings).toEqual(["2026-01-01", 50]);
     expect(recording.queries[2]!.bindings).toEqual(["2026-01-31", 50]);
+  });
+
+  it("returns an opaque keyset cursor and binds it to the selected sort", async () => {
+    const firstPageRows = [
+      { ...TRANSACTION_ROW, id: "transaction-3", posted_date: "2026-01-17" },
+      { ...TRANSACTION_ROW, id: "transaction-2", posted_date: "2026-01-16" },
+      { ...TRANSACTION_ROW, id: "transaction-1", posted_date: "2026-01-15" },
+    ];
+    const firstPage = createRecordingDatabase({ allResults: firstPageRows });
+
+    const page = await new TransactionRepository(firstPage.database).listPage({
+      pageSize: 2,
+      sort: "POSTED_DATE_DESC",
+      status: "POSTED",
+    });
+
+    expect(page.transactions.map(({ id }) => id)).toEqual(["transaction-3", "transaction-2"]);
+    expect(page.hasMore).toBe(true);
+    expect(page.nextCursor).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(firstPage.queries[0]!.bindings).toEqual(["POSTED", 3]);
+
+    const secondPage = createRecordingDatabase({ allResults: [] });
+    await expect(
+      new TransactionRepository(secondPage.database).listPage({
+        cursor: page.nextCursor!,
+        pageSize: 2,
+        sort: "POSTED_DATE_DESC",
+        status: "POSTED",
+      }),
+    ).resolves.toEqual({ hasMore: false, nextCursor: null, transactions: [] });
+    expect(secondPage.queries[0]!.sql).toContain(
+      "(posted_date < ? OR (posted_date = ? AND id < ?))",
+    );
+    expect(secondPage.queries[0]!.bindings).toEqual([
+      "POSTED",
+      "2026-01-16",
+      "2026-01-16",
+      "transaction-2",
+      3,
+    ]);
+
+    await expect(
+      new TransactionRepository(createRecordingDatabase().database).listPage({
+        cursor: page.nextCursor!,
+        pageSize: 2,
+        sort: "AMOUNT_DESC",
+      }),
+    ).rejects.toEqual(new TransactionQueryError("INVALID_CURSOR"));
+    await expect(
+      new TransactionRepository(createRecordingDatabase().database).listPage({
+        cursor: page.nextCursor!,
+        pageSize: 2,
+        sort: "POSTED_DATE_DESC",
+        status: "REMOVED",
+      }),
+    ).rejects.toEqual(new TransactionQueryError("INVALID_CURSOR"));
+  });
+
+  it("returns historical lifecycle and append-only category audit detail", async () => {
+    const categoryAudit = {
+      created_at: "2026-01-15T13:00:00.000Z",
+      id: "category-audit-1",
+      new_category_id: "category-1",
+      new_source: "MANUAL",
+      old_category_id: null,
+      old_source: "UNCLASSIFIED",
+      reason: "OWNER_TRANSACTION_OVERRIDE",
+    };
+    const recording = createRecordingDatabase({
+      allResultsSequence: [[categoryAudit]],
+      firstResultsSequence: [TRANSACTION_ROW, { id: "transaction-posted-replacement" }],
+    });
+
+    const detail = await new TransactionRepository(recording.database).findDetailById(
+      "transaction-1",
+    );
+
+    expect(detail).toMatchObject({
+      categoryAudits: [
+        {
+          id: "category-audit-1",
+          newCategoryId: "category-1",
+          newSource: "MANUAL",
+          oldCategoryId: null,
+          oldSource: "UNCLASSIFIED",
+          reason: "OWNER_TRANSACTION_OVERRIDE",
+        },
+      ],
+      lifecycle: {
+        pendingTransactionId: null,
+        replacedByTransactionId: "transaction-posted-replacement",
+      },
+      transaction: { id: "transaction-1" },
+    });
+    expect(recording.queries).toHaveLength(3);
+    expect(recording.queries.flatMap(({ bindings }) => bindings)).toEqual([
+      "transaction-1",
+      "transaction-1",
+      "transaction-1",
+    ]);
+  });
+
+  it("fails closed when stored payment metadata is not a valid object", async () => {
+    const recording = createRecordingDatabase({
+      allResults: [{ ...TRANSACTION_ROW, payment_metadata_json: "not-json" }],
+    });
+
+    const [result] = await new TransactionRepository(recording.database).list({});
+
+    expect(result?.paymentMetadata).toEqual({
+      payee: null,
+      payer: null,
+      paymentMethod: null,
+      referenceNumber: null,
+    });
   });
 });
