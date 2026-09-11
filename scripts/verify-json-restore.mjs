@@ -529,6 +529,29 @@ try {
     "Guard restore database did not reconcile.",
   );
 
+  const legacyInput = join(testRoot, "legacy-v3.json");
+  const legacyTarget = join(testRoot, "legacy-v3-restored-d1");
+  writeFileSync(legacyInput, JSON.stringify({ ...document, schemaVersion: 3 }), "utf8");
+  const legacyGuarded = run(process.execPath, [
+    remoteMigrationScript,
+    "--input",
+    legacyInput,
+    "--persist-to",
+    legacyTarget,
+  ]);
+  assert(
+    legacyGuarded.status === 0,
+    `Remote migration guard rejected a v3 backup: ${legacyGuarded.stderr}`,
+  );
+  assert(
+    JSON.parse(legacyGuarded.stdout).status === "READY",
+    "Remote migration guard was not ready for a v3 backup.",
+  );
+  assert(
+    query(legacyTarget, "SELECT COUNT(*) AS count FROM transactions")[0]?.count === 5,
+    "Legacy guard restore database did not reconcile.",
+  );
+
   const staleInput = join(testRoot, "stale.json");
   const staleTarget = join(testRoot, "stale-guard-d1");
   writeFileSync(

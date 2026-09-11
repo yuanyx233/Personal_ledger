@@ -4,7 +4,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { FULL_JSON_EXPORT_LIMITS, fullJsonExportSchema } from "../packages/domain/dist/index.js";
+import { FULL_JSON_EXPORT_LIMITS, normalizeFullJsonExport } from "../packages/domain/dist/index.js";
 import {
   RemoteMigrationGuardError,
   assertRecentFullJsonExport,
@@ -82,9 +82,13 @@ function readFreshExport(rawInput) {
   } catch {
     throw new RemoteMigrationCommandError("INPUT_JSON_INVALID");
   }
-  const parsed = fullJsonExportSchema.safeParse(value);
-  if (!parsed.success) throw new RemoteMigrationCommandError("INPUT_SCHEMA_INVALID");
-  assertRecentFullJsonExport(parsed.data.exportedAt);
+  let document;
+  try {
+    document = normalizeFullJsonExport(value);
+  } catch {
+    throw new RemoteMigrationCommandError("INPUT_SCHEMA_INVALID");
+  }
+  assertRecentFullJsonExport(document.exportedAt);
   return { bytes, input };
 }
 
