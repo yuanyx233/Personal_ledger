@@ -1,12 +1,51 @@
-import { API_PREFIX, PRODUCT_NAME, mapConnectionHealth } from "@ledger/domain";
 import {
-  accountEnabledUpdateRequestSchema,
+  API_PREFIX,
+  budgetMonthSchema,
+  budgetSettingSchema,
+  subscriptionCreateSchema,
+  subscriptionMutationSchema,
+  torontoDate,
+  CsvImportError,
+  FullJsonExportError,
+  TransactionCsvExportError,
+  applyActiveCategoryReferences,
+  applyExistingMatches,
+  applySuspectedDuplicateKeys,
+  csvImportBatchIdSchema,
+  csvImportCommitRequestSchema,
+  csvImportContentChecksum,
+  csvImportFileNameHash,
+  csvImportPreviewRequestSchema,
+  createFullJsonExport,
+  decodeCsvBase64,
+  mergeCashFlowCurrencySections,
+  manualDefaultCategory,
+  normalizeMerchantName,
+  parseCsvPreview,
+  parseCashFlowReportQuery,
+  parseSpendingReportQuery,
+  serializeTransactionCsv,
+  serializeFullJsonExport,
+  type TransactionCsvRow,
+} from "@ledger/domain";
+import {
+  categoryCreateRequestSchema,
+  decimalAmountToMinorUnits,
   idempotencyKeySchema,
-  linkTokenRequestSchema,
-  publicTokenExchangeRequestSchema,
-  syncRunCreateRequestSchema,
-  syncRunIdSchema,
-  type SyncWorkerService,
+  manualTransactionCreateRequestSchema,
+  manualTransactionPreviewRequestSchema,
+  transactionReimbursementRequestSchema,
+  manualTransactionDeleteRequestSchema,
+  manualTransactionUpdateRequestSchema,
+  merchantRuleCorrectionRequestSchema,
+  merchantRuleCreateRequestSchema,
+  merchantRuleUpdateRequestSchema,
+  parseTransactionCsvExportQuery,
+  parseTransactionListQuery,
+  parseMerchantRuleListQuery,
+  parseMerchantRulePreviewQuery,
+  transactionCategoryOverrideRequestSchema,
+  transactionIdSchema,
 } from "@ledger/domain/api-contracts";
 import { createStructuredLogger, type StructuredLogger } from "@ledger/domain/logging";
 import {
@@ -15,14 +54,33 @@ import {
   resolveAppRequestPolicy,
 } from "@ledger/domain/request-limits";
 import {
-  AccountRepository,
-  ConnectionRepository,
-  SyncRunPersistenceError,
-  SyncRunRepository,
-  type AccountRecord,
-  type SyncRunRecord,
+  CategoryRepository,
+  BudgetRepository,
+  SubscriptionRepository,
+  SubscriptionError,
+  CsvImportCommitPersistenceError,
+  CsvImportCommitRepository,
+  CsvImportPreviewPersistenceError,
+  CsvImportPreviewRepository,
+  FinancialReportPersistenceError,
+  FinancialReportRepository,
+  FullJsonExportPersistenceError,
+  FullJsonExportRepository,
+  ManualTransactionPersistenceError,
+  ManualTransactionRepository,
+  MerchantRuleCorrectionRepository,
+  MerchantRuleManagementPersistenceError,
+  MerchantRuleManagementRepository,
+  TransactionCategoryOverrideRepository,
+  TransactionCsvExportPersistenceError,
+  TransactionQueryError,
+  TransactionRepository,
+  type ManualTransactionRecord,
+  type MerchantRuleRecord,
+  type TransactionDetailRecord,
+  type TransactionCsvExportRecord,
+  type TransactionRecord,
 } from "@ledger/persistence";
-import { createPlaidClient, type PlaidClient, type PlaidEnvironment } from "@ledger/plaid";
 
 import {
   AccessDeniedError,
@@ -34,11 +92,6 @@ import {
 import { issueCsrfToken } from "./security/csrf";
 import { RequestGuardError, validateApiRequest } from "./security/request-guard";
 import { applySecurityHeaders } from "./security/response-headers";
-import {
-  ConnectionCreationServiceError,
-  createConnectionCreationService,
-} from "./plaid/connection-service";
-import { LinkTokenServiceError, createLinkTokenService } from "./plaid/link-token-service";
 
 export interface AppEnv {
   ACCESS_AUD: string;
@@ -49,20 +102,15 @@ export interface AppEnv {
   CSRF_HMAC_KEY: string;
   DB: D1Database;
   OWNER_EMAIL: string;
-  PLAID_BMO_INSTITUTION_ID: string;
-  PLAID_CLIENT_ID: string;
-  PLAID_ENV: PlaidEnvironment;
-  PLAID_LINK_CUSTOMIZATION_NAME: string;
-  PLAID_RBC_INSTITUTION_ID: string;
-  PLAID_SECRET: string;
-  PLAID_TOKEN_ENCRYPTION_KEY: string;
-  PLAID_WEBHOOK_URL: string;
-  SYNC: SyncWorkerService;
 }
 
 export type AccessGate = (request: Request, env: AppEnv) => Promise<AccessIdentity>;
 export type AccessVerifierFactory = (config: AccessVerifierConfig) => AccessRequestVerifier;
-export type PlaidClientFactory = (env: AppEnv) => PlaidClient;
+export type FullJsonExportFileFactory = (input: {
+  database: D1Database;
+  exportedAt: string;
+  timezone: "America/Toronto";
+}) => Promise<string>;
 
 const NOOP_LOGGER: StructuredLogger = { write: () => false };
 
@@ -142,78 +190,43 @@ function notFound(): Response {
   );
 }
 
-function versionConflict(currentVersion: number): Response {
+function versionConflict(
+  currentVersion: number,
+  resource: "merchant rule" | "transaction",
+): Response {
   return Response.json(
     {
       error: {
         code: "VERSION_CONFLICT",
         currentVersion,
-        message: "The account changed. Refresh and try again.",
+        message: `The ${resource} changed. Refresh and try again.`,
       },
     },
     { status: 409 },
   );
 }
 
-function upstreamUnavailable(): Response {
+function merchantRuleConflict(): Response {
   return Response.json(
     {
       error: {
-        code: "UPSTREAM_UNAVAILABLE",
-        message: "Plaid is temporarily unavailable.",
-      },
-    },
-    { status: 503 },
-  );
-}
-
-function linkTokenDenied(error: LinkTokenServiceError): Response {
-  if (error.code === "NOT_FOUND") return notFound();
-  if (error.code === "UPSTREAM_UNAVAILABLE") return upstreamUnavailable();
-  if (error.code === "INTERNAL_ERROR") return internalError();
-  if (error.code === "CONNECTION_NOT_REPAIRABLE") {
-    return Response.json(
-      {
-        error: {
-          code: error.code,
-          message: "This connection cannot be repaired with update mode.",
-        },
-      },
-      { status: 409 },
-    );
-  }
-  return Response.json(
-    {
-      error: {
-        code: error.code,
-        message: `Plaid Trial allows 10 Items, and removing one does not restore a slot. Confirm creating an additional ${error.institutionCode ?? "bank"} Item.`,
+        code: "CONFLICT",
+        message: "An exact merchant rule already uses that normalized merchant.",
       },
     },
     { status: 409 },
   );
 }
 
-function connectionCreationDenied(error: ConnectionCreationServiceError): Response {
-  const details = {
-    IDEMPOTENCY_CONFLICT: {
-      message: "The idempotency key is already in use.",
-      status: 409,
-    },
-    NO_SUPPORTED_ACCOUNTS: {
-      message: "No supported checking or credit-card account was returned.",
-      status: 422,
-    },
-    UNSUPPORTED_INSTITUTION: {
-      message: "Only configured RBC and BMO connections are supported.",
-      status: 422,
-    },
-  } as const;
-  if (error.code === "UPSTREAM_UNAVAILABLE") return upstreamUnavailable();
-  if (error.code === "INTERNAL_ERROR") return internalError();
-  const detail = details[error.code];
+function categoryNameConflict(): Response {
   return Response.json(
-    { error: { code: error.code, message: detail.message } },
-    { status: detail.status },
+    {
+      error: {
+        code: "CATEGORY_NAME_CONFLICT",
+        message: "A category with that normalized name already exists.",
+      },
+    },
+    { status: 409 },
   );
 }
 
@@ -230,6 +243,80 @@ function requestLimitDenied(error: RequestLimitError): Response {
     },
     { status: error.status },
   );
+}
+
+function csvImportDenied(error: CsvImportError): Response {
+  return Response.json(
+    {
+      error: {
+        code: error.status === 413 ? "PAYLOAD_TOO_LARGE" : "VALIDATION_ERROR",
+        fieldErrors: { contentBase64: [error.code] },
+        message:
+          error.status === 413
+            ? "The CSV file is too large."
+            : "The CSV file or mapping is invalid.",
+      },
+    },
+    { status: error.status },
+  );
+}
+
+function csvImportCommitDenied(error: CsvImportCommitPersistenceError): Response {
+  if (error.code === "NOT_FOUND") {
+    return Response.json(
+      { error: { code: "NOT_FOUND", message: "The CSV preview was not found." } },
+      { status: 404 },
+    );
+  }
+  if (error.code === "INVALID_INPUT") {
+    return Response.json(
+      {
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "CSV duplicate decisions are incomplete or invalid.",
+        },
+      },
+      { status: 422 },
+    );
+  }
+  if (error.code === "VERSION_CONFLICT") {
+    return Response.json(
+      {
+        error: {
+          code: "VERSION_CONFLICT",
+          ...(error.currentVersion === undefined ? {} : { currentVersion: error.currentVersion }),
+          message: "The CSV preview version is stale.",
+        },
+      },
+      { status: 409 },
+    );
+  }
+  if (error.code === "IDEMPOTENCY_CONFLICT") {
+    return Response.json(
+      {
+        error: {
+          code: "IDEMPOTENCY_CONFLICT",
+          message: "The idempotency key is already in use.",
+        },
+      },
+      { status: 409 },
+    );
+  }
+  if (error.code === "PREVIEW_EXPIRED" || error.code === "CONFLICT") {
+    return Response.json(
+      {
+        error: {
+          code: "CONFLICT",
+          message:
+            error.code === "PREVIEW_EXPIRED"
+              ? "The CSV preview has expired. Create a new preview before committing."
+              : "The CSV preview can no longer be committed.",
+        },
+      },
+      { status: 409 },
+    );
+  }
+  return internalError();
 }
 
 function rateLimited(): Response {
@@ -249,50 +336,169 @@ function parseJsonBody(body: Uint8Array): unknown {
   }
 }
 
-function accountReadModel(account: AccountRecord) {
+function* chunkBytes(bytes: Uint8Array, chunkSize = 64 * 1024): Iterable<Uint8Array> {
+  for (let offset = 0; offset < bytes.byteLength; offset += chunkSize) {
+    yield bytes.slice(offset, offset + chunkSize);
+  }
+}
+
+function csvPreviewRowReadModel(row: Awaited<ReturnType<typeof parseCsvPreview>>["rows"][number]) {
   return {
-    currency: account.currency,
-    displayName: account.displayName,
-    enabled: account.enabled,
-    id: account.id,
-    mask: account.mask,
-    subtype: account.subtype,
-    type: account.type,
-    version: account.version,
+    canonicalFingerprint: row.canonicalFingerprint,
+    duplicateEvidence: row.duplicateEvidence,
+    errors: row.errors,
+    existingMatch: row.existingMatch,
+    raw: row.raw,
+    rowNumber: row.rowNumber,
+    status: row.status,
   };
 }
 
-function syncRunReadModel(run: SyncRunRecord) {
+function manualTransactionReadModel(transaction: ManualTransactionRecord) {
+  const merchantName = transaction.merchantName ?? transaction.rawDescription.trim().slice(0, 256);
+  const normalizedMerchant =
+    transaction.normalizedMerchant ?? normalizeMerchantName(merchantName) ?? merchantName;
   return {
-    attemptCount: run.attemptCount,
-    connectionId: run.connectionId,
-    createdAt: run.createdAt,
-    finishedAt: run.finishedAt,
-    id: run.id,
-    lastErrorCode: run.lastErrorCode,
-    nextAttemptAt: run.nextAttemptAt,
-    startedAt: run.startedAt,
-    status: run.status,
-    trigger: run.trigger,
-    version: run.version,
+    accountLabel: transaction.accountLabel,
+    amountMinor: transaction.amountMinor,
+    reimbursementMinor: transaction.reimbursementMinor,
+    categorizationSource: transaction.categorizationSource,
+    categoryId: transaction.categoryId,
+    createdAt: transaction.createdAt,
+    currency: transaction.currency,
+    description: transaction.rawDescription,
+    direction: transaction.direction,
+    id: transaction.id,
+    merchantName,
+    normalizedMerchant,
+    postedDate: transaction.postedDate,
+    source: transaction.source,
+    status: transaction.status,
+    updatedAt: transaction.updatedAt,
+    version: transaction.version,
   };
 }
 
-export const createConfiguredPlaidClient: PlaidClientFactory = (env) =>
-  createPlaidClient({
-    clientId: env.PLAID_CLIENT_ID,
-    environment: env.PLAID_ENV,
-    secret: env.PLAID_SECRET,
-  });
+function transactionReadModel(transaction: TransactionRecord) {
+  return {
+    accountId: transaction.accountId,
+    accountLabel: transaction.accountLabel,
+    amountMinor: transaction.amountMinor,
+    reimbursementMinor: transaction.reimbursementMinor,
+    authorizedDate: transaction.authorizedDate,
+    categorizationSource: transaction.categorizationSource,
+    categoryId: transaction.categoryId,
+    categoryRuleId: transaction.categoryRuleId,
+    createdAt: transaction.createdAt,
+    currency: transaction.currency,
+    description: transaction.rawDescription,
+    direction: transaction.direction,
+    id: transaction.id,
+    merchantName: transaction.merchantName,
+    needsReview: transaction.needsReview,
+    normalizedMerchant: transaction.normalizedMerchant,
+    paymentMetadata: transaction.paymentMetadata,
+    postedDate: transaction.postedDate,
+    reviewReason: transaction.reviewReason,
+    source: transaction.source,
+    status: transaction.status,
+    updatedAt: transaction.updatedAt,
+    version: transaction.version,
+  };
+}
+
+function transactionCsvRow(transaction: TransactionCsvExportRecord): TransactionCsvRow {
+  return {
+    accountId: transaction.accountId,
+    accountLabel: transaction.accountLabel,
+    amountMinor: transaction.amountMinor,
+    reimbursementMinor: transaction.reimbursementMinor,
+    authorizedDate: transaction.authorizedDate,
+    bankConfirmation: transaction.bankConfirmation,
+    categorizationSource: transaction.categorizationSource,
+    categoryId: transaction.categoryId,
+    categoryName: transaction.categoryName,
+    categoryRuleDisplayMerchant: transaction.categoryRuleDisplayMerchant,
+    categoryRuleId: transaction.categoryRuleId,
+    currency: transaction.currency,
+    description: transaction.rawDescription,
+    direction: transaction.direction,
+    id: transaction.id,
+    importMatchCount: transaction.importMatchCount,
+    merchantName: transaction.merchantName,
+    needsReview: transaction.needsReview,
+    normalizedMerchant: transaction.normalizedMerchant,
+    plaidPfcConfidence: transaction.plaidPersonalFinanceCategory?.confidenceLevel ?? null,
+    plaidPfcDetailed: transaction.plaidPersonalFinanceCategory?.detailed ?? null,
+    plaidPfcPrimary: transaction.plaidPersonalFinanceCategory?.primary ?? null,
+    postedDate: transaction.postedDate,
+    reviewReason: transaction.reviewReason,
+    source: transaction.source,
+    status: transaction.status,
+    subscriptionId: transaction.subscriptionId,
+    subscriptionScheduledDate: transaction.subscriptionScheduledDate,
+  };
+}
+
+function merchantRuleReadModel(rule: MerchantRuleRecord) {
+  return {
+    active: rule.active,
+    categoryId: rule.categoryId,
+    createdAt: rule.createdAt,
+    displayMerchant: rule.displayMerchant,
+    id: rule.id,
+    normalizedMerchant: rule.normalizedMerchant,
+    updatedAt: rule.updatedAt,
+    version: rule.version,
+  };
+}
+
+function transactionDetailReadModel(detail: TransactionDetailRecord) {
+  return {
+    ...transactionReadModel(detail.transaction),
+    categoryAudits: detail.categoryAudits,
+    lifecycle: detail.lifecycle,
+  };
+}
+
+const createFullJsonExportFile: FullJsonExportFileFactory = async (input) => {
+  const data = await new FullJsonExportRepository(input.database).readSnapshot();
+  return serializeFullJsonExport(
+    createFullJsonExport({
+      data,
+      exportedAt: input.exportedAt,
+      timezone: input.timezone,
+    }),
+  );
+};
 
 export function createAppWorker(
   verifyAccess: AccessGate = createConfiguredAccessGate(),
   logger: StructuredLogger = NOOP_LOGGER,
-  createPlaid: PlaidClientFactory = createConfiguredPlaidClient,
   now: () => Date = () => new Date(),
+  createJsonExport: FullJsonExportFileFactory = createFullJsonExportFile,
 ) {
   return {
-    async fetch(request: Request, env: AppEnv, context?: ExecutionContext): Promise<Response> {
+    async scheduled(_controller: ScheduledController, env: AppEnv): Promise<void> {
+      try {
+        const generated = await new SubscriptionRepository(env.DB).generateDue(now().toISOString());
+        logger.write({
+          event: "SUBSCRIPTION_SCHEDULE",
+          level: "INFO",
+          outcome: "SUCCESS",
+          generated,
+        });
+      } catch {
+        logger.write({
+          event: "SUBSCRIPTION_SCHEDULE",
+          level: "ERROR",
+          outcome: "FAILED",
+          errorCode: "INTERNAL_ERROR",
+        });
+        throw new Error("Subscription scheduling failed.");
+      }
+    },
+    async fetch(request: Request, env: AppEnv): Promise<Response> {
       const url = new URL(request.url);
       const isApiRequest = url.pathname.startsWith(API_PREFIX);
       const secure = (response: Response, noStore = isApiRequest): Response =>
@@ -388,29 +594,124 @@ export function createAppWorker(
             return secure(internalError());
           }
         }
-        if (url.pathname === `${API_PREFIX}/connections`) {
+        if (url.pathname === `${API_PREFIX}/accounts`) {
           if (request.method !== "GET") return secure(methodNotAllowed());
           try {
-            const connections = await new ConnectionRepository(env.DB).listWithAccounts();
-            const data = connections.map(({ accounts, connection }) => {
-              const institutionCode =
-                connection.institutionId === env.PLAID_RBC_INSTITUTION_ID
-                  ? "RBC"
-                  : connection.institutionId === env.PLAID_BMO_INSTITUTION_ID
-                    ? "BMO"
-                    : undefined;
-              if (!institutionCode) throw new Error("unconfigured institution");
-              const health = mapConnectionHealth(connection, now());
-              return {
-                accounts: accounts.map(accountReadModel),
-                ...health,
-                id: connection.id,
-                institutionCode,
-                institutionName: connection.institutionName,
-                version: connection.version,
-              };
+            const { results: accounts } = await env.DB.prepare(
+              "SELECT id, display_name AS displayName FROM accounts UNION SELECT DISTINCT account_label AS id, account_label AS displayName FROM transactions WHERE account_label IS NOT NULL ORDER BY displayName",
+            ).all<{ id: string; displayName: string }>();
+            return secure(Response.json({ data: { accounts }, meta: {} }));
+          } catch {
+            return secure(internalError());
+          }
+        }
+        if (
+          url.pathname === `${API_PREFIX}/subscriptions` ||
+          url.pathname.startsWith(`${API_PREFIX}/subscriptions/`)
+        ) {
+          const id =
+            url.pathname === `${API_PREFIX}/subscriptions`
+              ? null
+              : url.pathname.slice(`${API_PREFIX}/subscriptions/`.length);
+          if (
+            (id === null && !["GET", "POST"].includes(request.method)) ||
+            (id !== null && request.method !== "PATCH")
+          )
+            return secure(methodNotAllowed());
+          const invalid = () =>
+            secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
+          if (url.search) return invalid();
+          if (id !== null && !/^subscription-[A-Za-z0-9_-]{1,147}$/.test(id))
+            return secure(notFound());
+          try {
+            const repository = new SubscriptionRepository(env.DB);
+            const timestamp = now().toISOString();
+            if (request.method === "GET")
+              return secure(
+                Response.json({
+                  data: await repository.list(),
+                  meta: { today: torontoDate(new Date(timestamp)) },
+                }),
+              );
+            const parsed = (
+              id === null ? subscriptionCreateSchema : subscriptionMutationSchema
+            ).safeParse(parseJsonBody(requestBody));
+            if (!parsed.success) return invalid();
+            const result =
+              id === null
+                ? { subscription: await repository.create(parsed.data, timestamp), removedCount: 0 }
+                : await repository.mutate(id, parsed.data, timestamp);
+            // The plan is already committed; a catch-up failure must not invite duplicate owner mutations.
+            let catchUpPending = false;
+            try {
+              await repository.generateDue(timestamp, result.subscription.id);
+            } catch {
+              catchUpPending = true;
+              logger.write({
+                event: "SUBSCRIPTION_SCHEDULE",
+                level: "ERROR",
+                outcome: "FAILED",
+                errorCode: "INTERNAL_ERROR",
+              });
+            }
+            const subscription = (await repository.find(result.subscription.id))!;
+            catchUpPending ||=
+              subscription.status === "ACTIVE" &&
+              subscription.nextChargeDate <= torontoDate(new Date(timestamp));
+            return secure(
+              Response.json(
+                { data: { ...result, subscription }, meta: { catchUpPending } },
+                { status: id === null ? 201 : 200 },
+              ),
+            );
+          } catch (error) {
+            if (error instanceof SubscriptionError) {
+              const status =
+                error.code === "NOT_FOUND" ? 404 : error.code === "VERSION_CONFLICT" ? 409 : 422;
+              return secure(
+                Response.json(
+                  {
+                    error: {
+                      code: error.code,
+                      message: "Refresh the subscription and check the supplied values.",
+                    },
+                  },
+                  { status },
+                ),
+              );
+            }
+            logger.write({
+              event: "API_REQUEST",
+              level: "ERROR",
+              outcome: "FAILED",
+              errorCode: "INTERNAL_ERROR",
+              status: 500,
             });
-            return secure(Response.json({ data: { connections: data }, meta: {} }));
+            return secure(internalError());
+          }
+        }
+        if (url.pathname === `${API_PREFIX}/budgets`) {
+          if (request.method !== "GET" && request.method !== "PUT")
+            return secure(methodNotAllowed());
+          const invalid = () =>
+            secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
+          try {
+            const repository = new BudgetRepository(env.DB);
+            if (request.method === "PUT") {
+              const parsed = budgetSettingSchema.safeParse(parseJsonBody(requestBody));
+              if (!parsed.success || url.search) return invalid();
+              const budget = await repository.save(parsed.data, now().toISOString());
+              if (!budget) return invalid();
+              return secure(Response.json({ data: { budget }, meta: {} }));
+            }
+            const month = budgetMonthSchema.safeParse(url.searchParams.get("month"));
+            if (!month.success || [...url.searchParams.keys()].length !== 1) return invalid();
+            return secure(
+              Response.json({
+                data: { budgets: await repository.list(month.data) },
+                meta: { month: month.data },
+              }),
+            );
           } catch {
             logger.write({
               errorCode: "INTERNAL_ERROR",
@@ -422,161 +723,259 @@ export function createAppWorker(
             return secure(internalError());
           }
         }
-        if (url.pathname === `${API_PREFIX}/sync-runs`) {
-          if (request.method !== "POST") return secure(methodNotAllowed());
-          const parsedBody = syncRunCreateRequestSchema.safeParse(parseJsonBody(requestBody));
-          const parsedIdempotencyKey = idempotencyKeySchema.safeParse(
-            request.headers.get("Idempotency-Key"),
-          );
-          if (!parsedBody.success || !parsedIdempotencyKey.success) {
-            const error = new RequestLimitError("VALIDATION_ERROR", 422);
+        if (url.pathname === `${API_PREFIX}/categories`) {
+          if (request.method !== "GET" && request.method !== "POST") {
+            return secure(methodNotAllowed());
+          }
+          try {
+            const repository = new CategoryRepository(env.DB);
+            if (request.method === "POST") {
+              const parsedBody = categoryCreateRequestSchema.safeParse(parseJsonBody(requestBody));
+              if (!parsedBody.success) {
+                return secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
+              }
+              const result = await repository.createExpense({
+                name: parsedBody.data.name,
+                now: now().toISOString(),
+              });
+              if (result.kind === "NAME_CONFLICT") return secure(categoryNameConflict());
+              const response = Response.json(
+                { data: { category: result.category }, meta: {} },
+                { status: 201 },
+              );
+              response.headers.set("Location", `${API_PREFIX}/categories/${result.category.id}`);
+              return secure(response);
+            }
+            return secure(
+              Response.json({
+                data: { categories: await repository.list() },
+                meta: {},
+              }),
+            );
+          } catch {
             logger.write({
-              errorCode: error.code,
+              errorCode: "INTERNAL_ERROR",
               event: "API_REQUEST",
-              level: "WARN",
-              outcome: "DENIED",
-              status: error.status,
+              level: "ERROR",
+              outcome: "FAILED",
+              status: 500,
             });
-            return secure(requestLimitDenied(error));
+            return secure(internalError());
+          }
+        }
+        if (url.pathname === `${API_PREFIX}/imports/csv`) {
+          if (request.method !== "POST") return secure(methodNotAllowed());
+          const parsedBody = csvImportPreviewRequestSchema.safeParse(parseJsonBody(requestBody));
+          if (!parsedBody.success) {
+            return secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
           }
 
           try {
-            const result = await new SyncRunRepository(env.DB).enqueueManual({
-              connectionId: parsedBody.data.connectionId,
-              idempotencyKey: parsedIdempotencyKey.data,
-              now: now().toISOString(),
+            const csvBytes = decodeCsvBase64(parsedBody.data.contentBase64);
+            const parsedPreview = await parseCsvPreview({
+              chunks: chunkBytes(csvBytes),
+              ...(parsedBody.data.mapping === undefined
+                ? {}
+                : { mapping: parsedBody.data.mapping }),
             });
-            const runId = syncRunIdSchema.safeParse(result.run.id);
-            if (!runId.success) throw new SyncRunPersistenceError("DATABASE_FAILURE");
-            const shouldDispatch = ["QUEUED", "RUNNING", "RETRY_WAIT"].includes(result.run.status);
-            if (shouldDispatch && context) {
-              const dispatchInput = {
-                connectionId: parsedBody.data.connectionId,
-                runId: runId.data,
-              };
-              try {
-                const dispatch = env.SYNC.syncConnection(dispatchInput).catch(() => {
-                  logger.write({
-                    connectionId: parsedBody.data.connectionId,
-                    errorCode: "UPSTREAM_UNAVAILABLE",
-                    event: "SYNC_RUN",
-                    level: "ERROR",
-                    outcome: "FAILED",
-                    syncRunId: result.run.id,
-                  });
-                });
-                context.waitUntil(dispatch);
-              } catch {
-                logger.write({
-                  connectionId: parsedBody.data.connectionId,
-                  errorCode: "UPSTREAM_UNAVAILABLE",
-                  event: "SYNC_RUN",
-                  level: "ERROR",
-                  outcome: "FAILED",
-                  syncRunId: result.run.id,
-                });
-              }
-            }
-
-            const status = result.kind === "CREATED" ? 202 : 200;
-            const response = Response.json(
-              {
-                data: { syncRun: syncRunReadModel(result.run) },
-                meta: {
-                  replayed: result.kind === "REPLAY",
-                  reusedActive: result.kind === "EXISTING_ACTIVE",
-                },
-              },
-              { status },
+            const contentChecksum = await csvImportContentChecksum(parsedPreview);
+            const repository = new CsvImportPreviewRepository(env.DB);
+            const [activeCategoryReferences, suspectedDuplicateKeys, existingMatches] =
+              await Promise.all([
+                repository.listActiveCategoryReferences(),
+                repository.findSuspectedDuplicateKeys(parsedPreview.rows),
+                repository.findExistingMatches(parsedPreview.rows),
+              ]);
+            const categoryValidatedPreview = applyActiveCategoryReferences(
+              parsedPreview,
+              activeCategoryReferences,
             );
-            response.headers.set("Location", `${API_PREFIX}/sync-runs/${runId.data}`);
+            const duplicateMarkedPreview = applySuspectedDuplicateKeys(
+              categoryValidatedPreview,
+              suspectedDuplicateKeys,
+            );
+            const preview = applyExistingMatches(duplicateMarkedPreview, existingMatches);
+            const requestedAt = now();
+            const expiresAt = new Date(requestedAt.getTime() + 30 * 60 * 1000).toISOString();
+            const sourceFileNameHash = await csvImportFileNameHash(parsedBody.data.fileName);
+            const staged = await repository.stagePreview({
+              contentChecksum,
+              expiresAt,
+              now: requestedAt.toISOString(),
+              preview,
+              sourceFileNameHash,
+            });
+            const responsePreview = staged.kind === "REPLAYED" ? staged.preview : preview;
+            const visibleRows = responsePreview.rows.slice(0, 100).map(csvPreviewRowReadModel);
+            const reviewRows = responsePreview.rows
+              .slice(100)
+              .filter(
+                ({ duplicateEvidence, existingMatch }) =>
+                  duplicateEvidence === "SUSPECTED_SAME_FILE" ||
+                  existingMatch?.disposition === "SUSPECTED_EXISTING",
+              )
+              .map(csvPreviewRowReadModel);
+            const status = staged.kind === "REPLAYED" ? 200 : 201;
             logger.write({
-              connectionId: parsedBody.data.connectionId,
-              event: "API_REQUEST",
+              event: "CSV_IMPORT",
+              importBatchId: staged.id,
               level: "INFO",
               outcome: "SUCCESS",
               status,
-              syncRunId: result.run.id,
             });
-            return secure(response);
+            return secure(
+              Response.json(
+                {
+                  data: {
+                    preview: {
+                      adapter: responsePreview.adapter,
+                      columns: responsePreview.columns,
+                      counts: responsePreview.counts,
+                      expiresAt: staged.expiresAt,
+                      fileName: parsedBody.data.fileName,
+                      id: staged.id,
+                      mapping: parsedBody.data.mapping ?? null,
+                      reviewRows,
+                      rows: visibleRows,
+                      status: "PREVIEWED",
+                      version: staged.version,
+                    },
+                  },
+                  meta: {
+                    ledgerTransactionsCreated: 0,
+                    replayed: staged.kind === "REPLAYED",
+                    rowsTruncated: responsePreview.rows.length > visibleRows.length,
+                  },
+                },
+                { status },
+              ),
+            );
           } catch (error) {
-            if (error instanceof SyncRunPersistenceError && error.code === "NOT_FOUND") {
-              return secure(notFound());
+            if (error instanceof CsvImportError) {
+              logger.write({
+                errorCode: error.status === 413 ? "PAYLOAD_TOO_LARGE" : "VALIDATION_ERROR",
+                event: "CSV_IMPORT",
+                level: "WARN",
+                outcome: "DENIED",
+                status: error.status,
+              });
+              return secure(csvImportDenied(error));
             }
-            logger.write({
-              connectionId: parsedBody.data.connectionId,
-              errorCode: "INTERNAL_ERROR",
-              event: "API_REQUEST",
-              level: "ERROR",
-              outcome: "FAILED",
-              status: 500,
-            });
+            if (error instanceof CsvImportPreviewPersistenceError) {
+              if (error.code === "CONFLICT") {
+                logger.write({
+                  errorCode: "CONFLICT",
+                  event: "CSV_IMPORT",
+                  level: "WARN",
+                  outcome: "DENIED",
+                  status: 409,
+                });
+                return secure(
+                  Response.json(
+                    {
+                      error: {
+                        code: "CONFLICT",
+                        message: "This CSV batch can no longer be replaced by a preview.",
+                      },
+                    },
+                    { status: 409 },
+                  ),
+                );
+              }
+              logger.write({
+                errorCode: "INTERNAL_ERROR",
+                event: "CSV_IMPORT",
+                level: "ERROR",
+                outcome: "FAILED",
+                status: 500,
+              });
+            }
             return secure(internalError());
           }
         }
-        const syncRunPath = new RegExp(`^${API_PREFIX}/sync-runs/([^/]+)$`).exec(url.pathname);
-        if (syncRunPath) {
-          if (request.method !== "GET") return secure(methodNotAllowed());
-          const parsedRunId = syncRunIdSchema.safeParse(syncRunPath[1]);
-          if (!parsedRunId.success) return secure(notFound());
-          try {
-            const run = await new SyncRunRepository(env.DB).findById(parsedRunId.data);
-            if (!run) return secure(notFound());
-            return secure(Response.json({ data: { syncRun: syncRunReadModel(run) }, meta: {} }));
-          } catch {
-            logger.write({
-              errorCode: "INTERNAL_ERROR",
-              event: "API_REQUEST",
-              level: "ERROR",
-              outcome: "FAILED",
-              status: 500,
-            });
-            return secure(internalError());
-          }
-        }
-        const accountPath = new RegExp(`^${API_PREFIX}/accounts/([^/]+)$`).exec(url.pathname);
-        if (accountPath) {
-          if (request.method !== "PATCH") return secure(methodNotAllowed());
-          const accountId = accountPath[1]!;
-          const parsedBody = accountEnabledUpdateRequestSchema.safeParse(
-            parseJsonBody(requestBody),
+        const csvCommitMatch = url.pathname.match(/^\/api\/v1\/imports\/([^/]+)\/commit$/);
+        if (csvCommitMatch) {
+          if (request.method !== "POST") return secure(methodNotAllowed());
+          const parsedBatchId = csvImportBatchIdSchema.safeParse(csvCommitMatch[1]);
+          const parsedBody = csvImportCommitRequestSchema.safeParse(parseJsonBody(requestBody));
+          const parsedIdempotencyKey = idempotencyKeySchema.safeParse(
+            request.headers.get("Idempotency-Key"),
           );
-          if (!/^account-[A-Za-z0-9_-]{1,152}$/.test(accountId) || !parsedBody.success) {
-            const error = new RequestLimitError("VALIDATION_ERROR", 422);
-            logger.write({
-              errorCode: error.code,
-              event: "API_REQUEST",
-              level: "WARN",
-              outcome: "DENIED",
-              status: error.status,
-            });
-            return secure(requestLimitDenied(error));
+          if (!parsedBatchId.success || !parsedBody.success || !parsedIdempotencyKey.success) {
+            return secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
           }
 
           try {
-            const result = await new AccountRepository(env.DB).updateEnabled({
-              enabled: parsedBody.data.enabled,
-              id: accountId,
-              now: new Date().toISOString(),
+            const result = await new CsvImportCommitRepository(env.DB).commit({
+              batchId: parsedBatchId.data,
+              idempotencyKey: parsedIdempotencyKey.data,
+              now: now().toISOString(),
+              reviewDecisions: parsedBody.data.reviewDecisions,
               version: parsedBody.data.version,
             });
-            if (result.kind === "NOT_FOUND") return secure(notFound());
-            if (result.kind === "VERSION_CONFLICT") {
-              return secure(versionConflict(result.currentVersion));
-            }
             logger.write({
-              accountId,
-              event: "API_REQUEST",
+              event: "CSV_IMPORT",
+              importBatchId: result.importBatch.id,
               level: "INFO",
               outcome: "SUCCESS",
               status: 200,
             });
             return secure(
-              Response.json({ data: { account: accountReadModel(result.account) }, meta: {} }),
+              Response.json({
+                data: { importBatch: result.importBatch },
+                meta: { replayed: result.replayed },
+              }),
             );
-          } catch {
+          } catch (error) {
+            const failure =
+              error instanceof CsvImportCommitPersistenceError
+                ? error
+                : new CsvImportCommitPersistenceError("WRITE_FAILED");
+            const response = csvImportCommitDenied(failure);
             logger.write({
-              accountId,
+              errorCode:
+                failure.code === "INVALID_INPUT"
+                  ? "VALIDATION_ERROR"
+                  : failure.code === "PREVIEW_EXPIRED"
+                    ? "CONFLICT"
+                    : failure.code,
+              event: "CSV_IMPORT",
+              level: response.status >= 500 ? "ERROR" : "WARN",
+              outcome: "DENIED",
+              status: response.status,
+            });
+            return secure(response);
+          }
+        }
+        if (url.pathname === `${API_PREFIX}/exports/data.json`) {
+          if (request.method !== "GET") return secure(methodNotAllowed());
+          if (url.searchParams.size > 0) {
+            return secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
+          }
+          try {
+            const exportedAt = now().toISOString();
+            const json = await createJsonExport({
+              database: env.DB,
+              exportedAt,
+              timezone: env.APP_TIMEZONE,
+            });
+            return secure(
+              new Response(json, {
+                headers: {
+                  "Content-Disposition": `attachment; filename="personal-ledger-${exportedAt.slice(0, 10)}.json"`,
+                  "Content-Type": "application/json; charset=utf-8",
+                },
+              }),
+            );
+          } catch (error) {
+            if (
+              (error instanceof FullJsonExportPersistenceError &&
+                error.code === "ROW_LIMIT_EXCEEDED") ||
+              error instanceof FullJsonExportError
+            ) {
+              return secure(requestLimitDenied(new RequestLimitError("PAYLOAD_TOO_LARGE", 413)));
+            }
+            logger.write({
               errorCode: "INTERNAL_ERROR",
               event: "API_REQUEST",
               level: "ERROR",
@@ -586,9 +985,188 @@ export function createAppWorker(
             return secure(internalError());
           }
         }
-        if (url.pathname === `${API_PREFIX}/plaid/link-tokens`) {
+        if (url.pathname === `${API_PREFIX}/exports/transactions.csv`) {
+          if (request.method !== "GET") return secure(methodNotAllowed());
+          let query;
+          try {
+            query = parseTransactionCsvExportQuery(url.searchParams);
+          } catch {
+            return secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
+          }
+          try {
+            const transactions = await new TransactionRepository(env.DB).listForCsvExport(query);
+            const csv = serializeTransactionCsv(transactions.map(transactionCsvRow));
+            return secure(
+              new Response(csv, {
+                headers: {
+                  "Content-Disposition": `attachment; filename="transactions-${now().toISOString().slice(0, 10)}.csv"`,
+                  "Content-Type": "text/csv; charset=utf-8",
+                },
+              }),
+            );
+          } catch (error) {
+            if (
+              error instanceof TransactionCsvExportPersistenceError ||
+              error instanceof TransactionCsvExportError
+            ) {
+              return secure(requestLimitDenied(new RequestLimitError("PAYLOAD_TOO_LARGE", 413)));
+            }
+            logger.write({
+              errorCode: "INTERNAL_ERROR",
+              event: "API_REQUEST",
+              level: "ERROR",
+              outcome: "FAILED",
+              status: 500,
+            });
+            return secure(internalError());
+          }
+        }
+        if (url.pathname === `${API_PREFIX}/reports/spending`) {
+          if (request.method !== "GET") return secure(methodNotAllowed());
+          let query;
+          try {
+            query = parseSpendingReportQuery(url.searchParams);
+          } catch {
+            return secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
+          }
+          try {
+            const generatedAt = now();
+            const [report, freshness] = await Promise.all([
+              new FinancialReportRepository(env.DB).spendingBreakdown(query),
+              Promise.resolve({ generatedAt: generatedAt.toISOString() }),
+            ]);
+            return secure(
+              Response.json({
+                data: { sections: report.sections },
+                meta: { freshness, period: report.period, query },
+              }),
+            );
+          } catch (error) {
+            if (
+              error instanceof FinancialReportPersistenceError &&
+              error.code === "INVALID_INPUT"
+            ) {
+              return secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
+            }
+            return secure(internalError());
+          }
+        }
+        if (url.pathname === `${API_PREFIX}/reports/cash-flow`) {
+          if (request.method !== "GET") return secure(methodNotAllowed());
+          let query;
+          try {
+            query = parseCashFlowReportQuery(url.searchParams);
+          } catch {
+            return secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
+          }
+          try {
+            const generatedAt = now();
+            const report = await new FinancialReportRepository(env.DB).cashFlowWithComparisons(
+              query,
+            );
+            const freshness = { generatedAt: generatedAt.toISOString() };
+            return secure(
+              Response.json({
+                data: {
+                  sections: mergeCashFlowCurrencySections(
+                    report.current.currencies,
+                    report.previousPeriod.comparisons,
+                    report.previousYear.comparisons,
+                  ),
+                },
+                meta: {
+                  freshness,
+                  periods: {
+                    current: report.current.period,
+                    previousPeriod: report.previousPeriod.period,
+                    previousYear: report.previousYear.period,
+                  },
+                  query,
+                },
+              }),
+            );
+          } catch (error) {
+            if (
+              error instanceof FinancialReportPersistenceError &&
+              error.code === "INVALID_INPUT"
+            ) {
+              return secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
+            }
+            return secure(internalError());
+          }
+        }
+        if (url.pathname === `${API_PREFIX}/transactions` && request.method === "GET") {
+          let query;
+          try {
+            query = parseTransactionListQuery(url.searchParams);
+          } catch {
+            const error = new RequestLimitError("VALIDATION_ERROR", 422);
+            logger.write({
+              errorCode: error.code,
+              event: "API_REQUEST",
+              level: "WARN",
+              outcome: "DENIED",
+              status: error.status,
+            });
+            return secure(requestLimitDenied(error));
+          }
+
+          try {
+            const page = await new TransactionRepository(env.DB).listPage(query);
+            return secure(
+              Response.json({
+                data: { transactions: page.transactions.map(transactionReadModel) },
+                meta: {
+                  hasMore: page.hasMore,
+                  nextCursor: page.nextCursor,
+                  query,
+                },
+              }),
+            );
+          } catch (error) {
+            if (error instanceof TransactionQueryError) {
+              return secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
+            }
+            logger.write({
+              errorCode: "INTERNAL_ERROR",
+              event: "API_REQUEST",
+              level: "ERROR",
+              outcome: "FAILED",
+              status: 500,
+            });
+            return secure(internalError());
+          }
+        }
+        if (url.pathname === `${API_PREFIX}/transaction-previews`) {
           if (request.method !== "POST") return secure(methodNotAllowed());
-          const parsedBody = linkTokenRequestSchema.safeParse(parseJsonBody(requestBody));
+          const parsedBody = manualTransactionPreviewRequestSchema.safeParse(
+            parseJsonBody(requestBody),
+          );
+          if (!parsedBody.success) {
+            return secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
+          }
+          try {
+            const result = await new CategoryRepository(env.DB).previewMerchant({
+              description: parsedBody.data.description,
+              preferredCategoryId: manualDefaultCategory(parsedBody.data.description),
+            });
+            if (!result) throw new Error("No active expense category is available.");
+            return secure(Response.json({ data: result, meta: {} }));
+          } catch {
+            logger.write({
+              errorCode: "INTERNAL_ERROR",
+              event: "API_REQUEST",
+              level: "ERROR",
+              outcome: "FAILED",
+              status: 500,
+            });
+            return secure(internalError());
+          }
+        }
+        if (url.pathname === `${API_PREFIX}/transactions` && request.method === "POST") {
+          const parsedBody = manualTransactionCreateRequestSchema.safeParse(
+            parseJsonBody(requestBody),
+          );
           if (!parsedBody.success) {
             const error = new RequestLimitError("VALIDATION_ERROR", 422);
             logger.write({
@@ -602,52 +1180,106 @@ export function createAppWorker(
           }
 
           try {
-            const linkToken = await createLinkTokenService({
-              bmoInstitutionId: env.PLAID_BMO_INSTITUTION_ID,
-              clientName: PRODUCT_NAME,
-              database: env.DB,
-              linkCustomizationName: env.PLAID_LINK_CUSTOMIZATION_NAME,
-              plaid: createPlaid(env),
-              rbcInstitutionId: env.PLAID_RBC_INSTITUTION_ID,
-              tokenEncryptionKey: env.PLAID_TOKEN_ENCRYPTION_KEY,
-              webhookUrl: env.PLAID_WEBHOOK_URL,
-            }).create(parsedBody.data);
+            const result = await new ManualTransactionRepository(env.DB).create({
+              accountLabel: parsedBody.data.accountLabel,
+              reimbursementMinor:
+                parsedBody.data.reimbursementAmount === undefined
+                  ? 0
+                  : decimalAmountToMinorUnits(
+                      parsedBody.data.reimbursementAmount,
+                      parsedBody.data.currency,
+                    ),
+              amountMinor: decimalAmountToMinorUnits(
+                parsedBody.data.amount,
+                parsedBody.data.currency,
+              ),
+              categoryId: parsedBody.data.categoryId,
+              currency: parsedBody.data.currency,
+              description: parsedBody.data.description,
+              direction: parsedBody.data.direction,
+              now: now().toISOString(),
+              postedDate: parsedBody.data.postedDate,
+              ...(parsedBody.data.rememberMerchant === true ? { rememberMerchant: true } : {}),
+            });
+            if (result.kind === "CATEGORY_NOT_FOUND") {
+              return secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
+            }
+            const transactionId = transactionIdSchema.safeParse(result.transaction.id);
+            if (!transactionId.success) {
+              throw new ManualTransactionPersistenceError("WRITE_FAILED");
+            }
+            const response = Response.json(
+              {
+                data: {
+                  categoryConfirmationRequired:
+                    result.transaction.categorizationSource === "UNCLASSIFIED",
+                  transaction: manualTransactionReadModel(result.transaction),
+                },
+                meta: {},
+              },
+              { status: 201 },
+            );
+            response.headers.set("Location", `${API_PREFIX}/transactions/${transactionId.data}`);
             logger.write({
-              ...(parsedBody.data.mode === "UPDATE"
-                ? { connectionId: parsedBody.data.connectionId }
-                : {}),
               event: "API_REQUEST",
               level: "INFO",
               outcome: "SUCCESS",
-              status: 200,
-            });
-            return secure(Response.json({ data: linkToken, meta: {} }));
-          } catch (error) {
-            const failure =
-              error instanceof LinkTokenServiceError
-                ? error
-                : new LinkTokenServiceError("INTERNAL_ERROR");
-            const response = linkTokenDenied(failure);
-            logger.write({
-              ...(parsedBody.data.mode === "UPDATE"
-                ? { connectionId: parsedBody.data.connectionId }
-                : {}),
-              errorCode: failure.code,
-              event: "API_REQUEST",
-              level: failure.code === "ADDITIONAL_ITEM_CONFIRMATION_REQUIRED" ? "WARN" : "ERROR",
-              outcome: "FAILED",
-              status: response.status,
+              status: 201,
+              transactionId: result.transaction.id,
             });
             return secure(response);
+          } catch {
+            logger.write({
+              errorCode: "INTERNAL_ERROR",
+              event: "API_REQUEST",
+              level: "ERROR",
+              outcome: "FAILED",
+              status: 500,
+            });
+            return secure(internalError());
           }
         }
-        if (url.pathname === `${API_PREFIX}/plaid/items`) {
-          if (request.method !== "POST") return secure(methodNotAllowed());
-          const parsedBody = publicTokenExchangeRequestSchema.safeParse(parseJsonBody(requestBody));
-          const parsedIdempotencyKey = idempotencyKeySchema.safeParse(
-            request.headers.get("Idempotency-Key"),
+        if (url.pathname === `${API_PREFIX}/transactions` && request.method !== "GET") {
+          return secure(methodNotAllowed());
+        }
+        const categorySuggestionsPath = new RegExp(
+          `^${API_PREFIX}/transactions/([^/]+)/category-suggestions$`,
+        ).exec(url.pathname);
+        if (categorySuggestionsPath) {
+          if (request.method !== "GET") return secure(methodNotAllowed());
+          const parsedTransactionId = transactionIdSchema.safeParse(categorySuggestionsPath[1]);
+          if (!parsedTransactionId.success) {
+            return secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
+          }
+          try {
+            const result = await new CategoryRepository(env.DB).suggestForTransaction(
+              parsedTransactionId.data,
+              2,
+            );
+            if (!result) return secure(notFound());
+            return secure(Response.json({ data: result, meta: {} }));
+          } catch {
+            logger.write({
+              errorCode: "INTERNAL_ERROR",
+              event: "API_REQUEST",
+              level: "ERROR",
+              outcome: "FAILED",
+              status: 500,
+              transactionId: parsedTransactionId.data,
+            });
+            return secure(internalError());
+          }
+        }
+        const merchantRuleCorrectionPath = new RegExp(
+          `^${API_PREFIX}/transactions/([^/]+)/merchant-rule$`,
+        ).exec(url.pathname);
+        if (merchantRuleCorrectionPath) {
+          if (request.method !== "PUT") return secure(methodNotAllowed());
+          const parsedTransactionId = transactionIdSchema.safeParse(merchantRuleCorrectionPath[1]);
+          const parsedBody = merchantRuleCorrectionRequestSchema.safeParse(
+            parseJsonBody(requestBody),
           );
-          if (!parsedBody.success || !parsedIdempotencyKey.success) {
+          if (!parsedTransactionId.success || !parsedBody.success) {
             const error = new RequestLimitError("VALIDATION_ERROR", 422);
             logger.write({
               errorCode: error.code,
@@ -660,54 +1292,372 @@ export function createAppWorker(
           }
 
           try {
-            const result = await createConnectionCreationService({
-              bmoInstitutionId: env.PLAID_BMO_INSTITUTION_ID,
-              database: env.DB,
-              plaid: createPlaid(env),
-              rbcInstitutionId: env.PLAID_RBC_INSTITUTION_ID,
-              tokenEncryptionKey: env.PLAID_TOKEN_ENCRYPTION_KEY,
-            }).create({
-              idempotencyKey: parsedIdempotencyKey.data,
-              publicToken: parsedBody.data.publicToken,
+            const result = await new MerchantRuleCorrectionRepository(env.DB).saveForFuture({
+              ...parsedBody.data,
+              id: parsedTransactionId.data,
+              now: now().toISOString(),
             });
+            if (result.kind === "NOT_FOUND") return secure(notFound());
+            if (result.kind === "VERSION_CONFLICT") {
+              return secure(
+                versionConflict(
+                  result.currentVersion,
+                  result.resource === "MERCHANT_RULE" ? "merchant rule" : "transaction",
+                ),
+              );
+            }
+            if (result.kind === "CATEGORY_NOT_FOUND" || result.kind === "MERCHANT_NOT_AVAILABLE") {
+              return secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
+            }
             logger.write({
-              connectionId: result.connection.id,
               event: "API_REQUEST",
               level: "INFO",
               outcome: "SUCCESS",
               status: 200,
+              transactionId: result.transaction.id,
             });
             return secure(
               Response.json({
-                data: { connection: result.connection },
-                meta: { replayed: result.replayed },
+                data: {
+                  merchantRule: merchantRuleReadModel(result.merchantRule),
+                  transaction: transactionReadModel(result.transaction),
+                },
+                meta: { historicalTransactionsChanged: 0 },
+              }),
+            );
+          } catch {
+            logger.write({
+              errorCode: "INTERNAL_ERROR",
+              event: "API_REQUEST",
+              level: "ERROR",
+              outcome: "FAILED",
+              status: 500,
+              transactionId: parsedTransactionId.data,
+            });
+            return secure(internalError());
+          }
+        }
+        const transactionPath = new RegExp(`^${API_PREFIX}/transactions/([^/]+)$`).exec(
+          url.pathname,
+        );
+        if (transactionPath) {
+          const parsedTransactionId = transactionIdSchema.safeParse(transactionPath[1]);
+          if (!parsedTransactionId.success) {
+            const error = new RequestLimitError("VALIDATION_ERROR", 422);
+            logger.write({
+              errorCode: error.code,
+              event: "API_REQUEST",
+              level: "WARN",
+              outcome: "DENIED",
+              status: error.status,
+            });
+            return secure(requestLimitDenied(error));
+          }
+
+          if (request.method === "GET") {
+            try {
+              const detail = await new TransactionRepository(env.DB).findDetailById(
+                parsedTransactionId.data,
+              );
+              if (!detail) return secure(notFound());
+              return secure(
+                Response.json({
+                  data: { transaction: transactionDetailReadModel(detail) },
+                  meta: {},
+                }),
+              );
+            } catch {
+              logger.write({
+                errorCode: "INTERNAL_ERROR",
+                event: "API_REQUEST",
+                level: "ERROR",
+                outcome: "FAILED",
+                status: 500,
+                transactionId: parsedTransactionId.data,
+              });
+              return secure(internalError());
+            }
+          }
+          if (request.method !== "PATCH" && request.method !== "DELETE") {
+            return secure(methodNotAllowed());
+          }
+
+          try {
+            let mutation;
+            if (request.method === "PATCH") {
+              const body = parseJsonBody(requestBody);
+              const reimbursement = transactionReimbursementRequestSchema.safeParse(body);
+              if (reimbursement.success) {
+                const result = await new TransactionRepository(env.DB).setReimbursement({
+                  id: parsedTransactionId.data,
+                  reimbursementMinor: decimalAmountToMinorUnits(
+                    reimbursement.data.reimbursementAmount,
+                    "CAD",
+                  ),
+                  version: reimbursement.data.version,
+                  now: now().toISOString(),
+                });
+                if (result.kind === "NOT_FOUND") return secure(notFound());
+                if (result.kind === "VERSION_CONFLICT")
+                  return secure(versionConflict(result.currentVersion, "transaction"));
+                if (result.kind === "INVALID_INPUT")
+                  return secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
+                if (result.kind === "UPDATED") {
+                  logger.write({
+                    event: "API_REQUEST",
+                    level: "INFO",
+                    outcome: "SUCCESS",
+                    status: 200,
+                    transactionId: result.transaction.id,
+                  });
+                  return secure(
+                    Response.json({
+                      data: { transaction: transactionReadModel(result.transaction) },
+                      meta: {},
+                    }),
+                  );
+                }
+              }
+              const parsedOverride = transactionCategoryOverrideRequestSchema.safeParse(body);
+              if (parsedOverride.success) {
+                const override = await new TransactionCategoryOverrideRepository(env.DB).override({
+                  ...parsedOverride.data,
+                  id: parsedTransactionId.data,
+                  now: now().toISOString(),
+                });
+                if (override.kind === "NOT_FOUND") return secure(notFound());
+                if (override.kind === "VERSION_CONFLICT") {
+                  return secure(versionConflict(override.currentVersion, "transaction"));
+                }
+                if (override.kind === "CATEGORY_NOT_FOUND") {
+                  return secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
+                }
+                logger.write({
+                  event: "API_REQUEST",
+                  level: "INFO",
+                  outcome: "SUCCESS",
+                  status: 200,
+                  transactionId: override.transaction.id,
+                });
+                return secure(
+                  Response.json({
+                    data: { transaction: transactionReadModel(override.transaction) },
+                    meta: {},
+                  }),
+                );
+              }
+              const parsedUpdate = manualTransactionUpdateRequestSchema.safeParse(body);
+              if (!parsedUpdate.success) {
+                return secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
+              }
+              const { amount, reimbursementAmount, ...update } = parsedUpdate.data;
+              mutation = await new ManualTransactionRepository(env.DB).update({
+                ...update,
+                ...(reimbursementAmount === undefined
+                  ? {}
+                  : {
+                      reimbursementMinor: decimalAmountToMinorUnits(
+                        reimbursementAmount,
+                        parsedUpdate.data.currency ?? "CAD",
+                      ),
+                    }),
+                ...(amount === undefined
+                  ? {}
+                  : {
+                      amountMinor: decimalAmountToMinorUnits(
+                        amount,
+                        parsedUpdate.data.currency ?? "CAD",
+                      ),
+                    }),
+                id: parsedTransactionId.data,
+                now: now().toISOString(),
+              });
+            } else {
+              const parsedDelete = manualTransactionDeleteRequestSchema.safeParse(
+                parseJsonBody(requestBody),
+              );
+              if (!parsedDelete.success) {
+                return secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
+              }
+              mutation = await new ManualTransactionRepository(env.DB).delete({
+                id: parsedTransactionId.data,
+                now: now().toISOString(),
+                version: parsedDelete.data.version,
+              });
+            }
+            if (mutation.kind === "NOT_FOUND") return secure(notFound());
+            if (mutation.kind === "VERSION_CONFLICT") {
+              return secure(versionConflict(mutation.currentVersion, "transaction"));
+            }
+            if (mutation.kind === "CATEGORY_NOT_FOUND") {
+              return secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
+            }
+            logger.write({
+              event: "API_REQUEST",
+              level: "INFO",
+              outcome: "SUCCESS",
+              status: 200,
+              transactionId: mutation.transaction.id,
+            });
+            return secure(
+              Response.json({
+                data: { transaction: manualTransactionReadModel(mutation.transaction) },
+                meta: {},
               }),
             );
           } catch (error) {
-            const failure =
-              error instanceof ConnectionCreationServiceError
-                ? error
-                : new ConnectionCreationServiceError("INTERNAL_ERROR");
-            const response = connectionCreationDenied(failure);
+            if (
+              error instanceof ManualTransactionPersistenceError &&
+              error.code === "INVALID_INPUT"
+            ) {
+              return secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
+            }
             logger.write({
-              errorCode: failure.code,
+              errorCode: "INTERNAL_ERROR",
               event: "API_REQUEST",
-              level: failure.code === "IDEMPOTENCY_CONFLICT" ? "WARN" : "ERROR",
+              level: "ERROR",
               outcome: "FAILED",
-              status: response.status,
+              status: 500,
+              transactionId: parsedTransactionId.data,
             });
+            return secure(internalError());
+          }
+        }
+        if (url.pathname === `${API_PREFIX}/merchant-rule-previews`) {
+          if (request.method !== "GET") return secure(methodNotAllowed());
+          let query;
+          try {
+            query = parseMerchantRulePreviewQuery(url.searchParams);
+          } catch {
+            return secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
+          }
+          try {
+            const preview = await new MerchantRuleManagementRepository(env.DB).preview(query);
+            if ("kind" in preview) {
+              return secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
+            }
+            return secure(
+              Response.json({
+                data: {
+                  existingRule: preview.existingRule
+                    ? merchantRuleReadModel(preview.existingRule)
+                    : null,
+                  proposedRule: preview.proposedRule,
+                },
+                meta: preview.impact,
+              }),
+            );
+          } catch {
+            return secure(internalError());
+          }
+        }
+        if (url.pathname === `${API_PREFIX}/merchant-rules`) {
+          if (request.method === "GET") {
+            let query;
+            try {
+              query = parseMerchantRuleListQuery(url.searchParams);
+            } catch {
+              return secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
+            }
+            try {
+              const page = await new MerchantRuleManagementRepository(env.DB).listPage(query);
+              return secure(
+                Response.json({
+                  data: { rules: page.rules.map(merchantRuleReadModel) },
+                  meta: {
+                    hasMore: page.hasMore,
+                    nextCursor: page.nextCursor,
+                    query,
+                  },
+                }),
+              );
+            } catch (error) {
+              if (
+                error instanceof MerchantRuleManagementPersistenceError &&
+                error.code === "INVALID_INPUT"
+              ) {
+                return secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
+              }
+              return secure(internalError());
+            }
+          }
+          if (request.method !== "POST") return secure(methodNotAllowed());
+          const parsedBody = merchantRuleCreateRequestSchema.safeParse(parseJsonBody(requestBody));
+          if (!parsedBody.success) {
+            return secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
+          }
+          try {
+            const result = await new MerchantRuleManagementRepository(env.DB).create({
+              ...parsedBody.data,
+              now: now().toISOString(),
+            });
+            if (result.kind === "NORMALIZED_MERCHANT_CONFLICT") {
+              return secure(merchantRuleConflict());
+            }
+            if (result.kind === "CATEGORY_NOT_FOUND" || result.kind === "MERCHANT_INVALID") {
+              return secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
+            }
+            const response = Response.json(
+              {
+                data: { merchantRule: merchantRuleReadModel(result.merchantRule) },
+                meta: result.impact,
+              },
+              { status: 201 },
+            );
+            response.headers.set(
+              "Location",
+              `${API_PREFIX}/merchant-rules/${result.merchantRule.id}`,
+            );
             return secure(response);
+          } catch {
+            return secure(internalError());
+          }
+        }
+        const merchantRulePath = new RegExp(`^${API_PREFIX}/merchant-rules/([^/]+)$`).exec(
+          url.pathname,
+        );
+        if (merchantRulePath) {
+          if (request.method !== "PATCH") return secure(methodNotAllowed());
+          const merchantRuleId = merchantRulePath[1]!;
+          const parsedBody = merchantRuleUpdateRequestSchema.safeParse(parseJsonBody(requestBody));
+          if (!/^[A-Za-z0-9_-]{1,160}$/.test(merchantRuleId) || !parsedBody.success) {
+            return secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
+          }
+          try {
+            const result = await new MerchantRuleManagementRepository(env.DB).update({
+              ...parsedBody.data,
+              id: merchantRuleId,
+              now: now().toISOString(),
+            });
+            if (result.kind === "NOT_FOUND") return secure(notFound());
+            if (result.kind === "VERSION_CONFLICT") {
+              return secure(versionConflict(result.currentVersion, "merchant rule"));
+            }
+            if (result.kind === "NORMALIZED_MERCHANT_CONFLICT") {
+              return secure(merchantRuleConflict());
+            }
+            if (result.kind === "CATEGORY_NOT_FOUND" || result.kind === "MERCHANT_INVALID") {
+              return secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
+            }
+            return secure(
+              Response.json({
+                data: { merchantRule: merchantRuleReadModel(result.merchantRule) },
+                meta: result.impact,
+              }),
+            );
+          } catch {
+            return secure(internalError());
           }
         }
         return secure(
           Response.json(
             {
               error: {
-                code: "APP_NOT_READY",
-                message: "The protected API is not available yet.",
+                code: "NOT_FOUND",
+                message: "Not found.",
               },
             },
-            { status: 503 },
+            { status: 404 },
           ),
         );
       }

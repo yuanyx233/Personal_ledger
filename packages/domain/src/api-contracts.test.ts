@@ -3,27 +3,44 @@ import * as z from "zod";
 
 import {
   API_ERROR_STATUS,
-  accountEnabledUpdateRequestSchema,
-  accountUpdateResponseSchema,
   apiErrorEnvelopeSchema,
   apiSuccessEnvelopeSchema,
   calendarDateSchema,
+  categoryCreateRequestSchema,
+  categoryMutationResponseSchema,
+  categorySuggestionsResponseSchema,
+  categoriesResponseSchema,
   cursorPaginationMetaSchema,
   cursorPaginationQuerySchema,
   currencyCodeSchema,
-  connectionCreationResponseSchema,
-  connectionsResponseSchema,
+  decimalAmountToMinorUnits,
   idempotencyKeySchema,
-  linkTokenRequestSchema,
-  linkTokenResponseSchema,
-  publicTokenExchangeRequestSchema,
+  merchantRuleCorrectionRequestSchema,
+  merchantRuleCorrectionResponseSchema,
+  merchantRuleCreateRequestSchema,
+  merchantRuleListResponseSchema,
+  merchantRuleMutationResponseSchema,
+  merchantRulePreviewResponseSchema,
+  merchantRuleUpdateRequestSchema,
+  manualTransactionCreateRequestSchema,
+  manualTransactionCreateResponseSchema,
+  manualTransactionDeleteRequestSchema,
+  manualTransactionMutationResponseSchema,
+  manualTransactionPreviewRequestSchema,
+  manualTransactionPreviewResponseSchema,
+  manualTransactionUpdateRequestSchema,
   moneySchema,
   optimisticVersionSchema,
   sessionResponseSchema,
-  syncRunCreateRequestSchema,
-  syncRunCreateResponseSchema,
-  syncRunDispatchInputSchema,
-  syncRunStatusResponseSchema,
+  transactionCategoryOverrideRequestSchema,
+  transactionCategoryOverrideResponseSchema,
+  transactionDetailResponseSchema,
+  transactionListResponseSchema,
+  transactionPaymentMetadataSchema,
+  parseTransactionCsvExportQuery,
+  parseTransactionListQuery,
+  parseMerchantRuleListQuery,
+  parseMerchantRulePreviewQuery,
 } from "./api-contracts";
 
 describe("API envelope contracts", () => {
@@ -63,94 +80,6 @@ describe("API envelope contracts", () => {
       sessionResponseSchema.safeParse({
         ...response,
         data: { ...response.data, csrfToken: "not-a-signed-token" },
-      }).success,
-    ).toBe(false);
-  });
-
-  it("defines the short-lived Link-token response without Plaid credentials", () => {
-    const response = {
-      data: {
-        expiresAt: "2026-07-15T12:30:00Z",
-        linkToken: "link-sandbox-token",
-      },
-      meta: {},
-    };
-
-    expect(linkTokenResponseSchema.parse(response)).toEqual(response);
-    expect(
-      linkTokenResponseSchema.safeParse({
-        ...response,
-        data: { ...response.data, secret: "must-not-leak" },
-      }).success,
-    ).toBe(false);
-  });
-
-  it("uses explicit initial and update Link-token request variants", () => {
-    expect(linkTokenRequestSchema.parse({ institutionCode: "RBC", mode: "INITIAL" })).toEqual({
-      institutionCode: "RBC",
-      mode: "INITIAL",
-    });
-    expect(
-      linkTokenRequestSchema.parse({
-        connectionId: "connection-1",
-        mode: "UPDATE",
-        reason: "ACCOUNT_SELECTION",
-      }),
-    ).toEqual({
-      connectionId: "connection-1",
-      mode: "UPDATE",
-      reason: "ACCOUNT_SELECTION",
-    });
-    expect(
-      linkTokenRequestSchema.safeParse({
-        connectionId: "connection-1",
-        mode: "UPDATE",
-        publicToken: "must-not-be-exchanged",
-        reason: "LOGIN_REQUIRED",
-      }).success,
-    ).toBe(false);
-  });
-
-  it("keeps public-token exchange input strict and its response token-free", () => {
-    expect(publicTokenExchangeRequestSchema.parse({ publicToken: "public-sandbox-token" })).toEqual(
-      { publicToken: "public-sandbox-token" },
-    );
-    expect(
-      publicTokenExchangeRequestSchema.safeParse({
-        products: ["auth"],
-        publicToken: "public-sandbox-token",
-      }).success,
-    ).toBe(false);
-
-    const response = {
-      data: {
-        connection: {
-          accounts: [
-            {
-              currency: "CAD",
-              displayName: "Daily Chequing",
-              enabled: true,
-              id: "account-1",
-              subtype: "CHECKING",
-              type: "DEPOSITORY",
-            },
-          ],
-          id: "connection-1",
-          institutionCode: "RBC",
-          institutionName: "Royal Bank of Canada",
-          status: "HEALTHY",
-        },
-      },
-      meta: { replayed: false },
-    };
-    expect(connectionCreationResponseSchema.parse(response)).toEqual(response);
-    expect(
-      connectionCreationResponseSchema.safeParse({
-        ...response,
-        data: {
-          ...response.data,
-          accessToken: "must-not-leak",
-        },
       }).success,
     ).toBe(false);
   });
@@ -195,52 +124,40 @@ describe("API envelope contracts", () => {
   });
 });
 
-describe("pagination and concurrency contracts", () => {
-  it("defines strict, secret-free manual sync contracts", () => {
-    expect(syncRunCreateRequestSchema.parse({ connectionId: "connection-rbc-1" })).toEqual({
-      connectionId: "connection-rbc-1",
-    });
-    expect(
-      syncRunCreateRequestSchema.safeParse({
-        connectionId: "connection-rbc-1",
-        leaseToken: "must-not-cross-the-boundary",
-      }).success,
-    ).toBe(false);
-    expect(
-      syncRunDispatchInputSchema.parse({
-        connectionId: "connection-rbc-1",
-        runId: "sync-run-request-1",
-      }),
-    ).toEqual({ connectionId: "connection-rbc-1", runId: "sync-run-request-1" });
-
-    const run = {
-      attemptCount: 0,
-      connectionId: "connection-rbc-1",
-      createdAt: "2026-07-15T12:00:00.000Z",
-      finishedAt: null,
-      id: "sync-run-request-1",
-      lastErrorCode: null,
-      nextAttemptAt: "2026-07-15T12:00:00.000Z",
-      startedAt: null,
-      status: "QUEUED",
-      trigger: "MANUAL",
-      version: 1,
+describe("category taxonomy contracts", () => {
+  it("defines a strict complete taxonomy read model", () => {
+    const response = {
+      data: {
+        categories: [
+          {
+            active: true,
+            createdAt: "2026-07-16T00:00:00.000Z",
+            editable: false,
+            id: "category-system-transfer",
+            kind: "TRANSFER",
+            name: "Transfer",
+            systemKey: "TRANSFER",
+            updatedAt: "2026-07-16T00:00:00.000Z",
+            version: 1,
+          },
+        ],
+      },
+      meta: {},
     } as const;
+
+    expect(categoriesResponseSchema.parse(response)).toEqual(response);
     expect(
-      syncRunCreateResponseSchema.parse({
-        data: { syncRun: run },
-        meta: { replayed: false, reusedActive: false },
-      }),
-    ).toBeDefined();
-    expect(syncRunStatusResponseSchema.parse({ data: { syncRun: run }, meta: {} })).toBeDefined();
-    expect(
-      syncRunStatusResponseSchema.safeParse({
-        data: { syncRun: { ...run, leaseToken: "must-not-leak" } },
-        meta: {},
+      categoriesResponseSchema.safeParse({
+        ...response,
+        data: {
+          categories: [{ ...response.data.categories[0], providerCode: "must-not-leak" }],
+        },
       }).success,
     ).toBe(false);
   });
+});
 
+describe("pagination and concurrency contracts", () => {
   it("parses bounded cursor pagination query values", () => {
     expect(cursorPaginationQuerySchema.parse({ pageSize: "25" })).toEqual({ pageSize: 25 });
     expect(cursorPaginationQuerySchema.parse({})).toEqual({ pageSize: 50 });
@@ -270,60 +187,386 @@ describe("pagination and concurrency contracts", () => {
     expect(optimisticVersionSchema.safeParse(1.5).success).toBe(false);
     expect(optimisticVersionSchema.safeParse("1").success).toBe(false);
   });
-
-  it("keeps account enablement optimistic and the connection read model secret-free", () => {
-    expect(accountEnabledUpdateRequestSchema.parse({ enabled: false, version: 2 })).toEqual({
-      enabled: false,
-      version: 2,
-    });
-    expect(
-      accountEnabledUpdateRequestSchema.safeParse({
-        enabled: true,
-        subtype: "SAVINGS",
-        version: 2,
-      }).success,
-    ).toBe(false);
-
-    const account = {
-      currency: "CAD",
-      displayName: "Daily Chequing",
-      enabled: true,
-      id: "account-1",
-      mask: "1234",
-      subtype: "CHECKING",
-      type: "DEPOSITORY",
-      version: 1,
-    } as const;
-    expect(
-      connectionsResponseSchema.parse({
-        data: {
-          connections: [
-            {
-              accounts: [account],
-              consentExpiresAt: null,
-              consentState: "NOT_REQUIRED",
-              id: "connection-1",
-              institutionCode: "RBC",
-              institutionName: "Royal Bank of Canada",
-              lastFailureCode: null,
-              lastSuccessAt: null,
-              nextActionCode: "NONE",
-              status: "HEALTHY",
-              version: 1,
-            },
-          ],
-        },
-        meta: {},
-      }),
-    ).toMatchObject({ data: { connections: [{ accounts: [account] }] } });
-    expect(accountUpdateResponseSchema.parse({ data: { account }, meta: {} })).toEqual({
-      data: { account },
-      meta: {},
-    });
-  });
 });
 
 describe("ledger primitive contracts", () => {
+  it("defines a strict four-field transaction payment-metadata contract", () => {
+    const metadata = {
+      payee: "Alex",
+      payer: "",
+      paymentMethod: null,
+      referenceNumber: "reference-1",
+    };
+
+    expect(transactionPaymentMetadataSchema.parse(metadata)).toEqual(metadata);
+    expect(
+      transactionPaymentMetadataSchema.safeParse({ ...metadata, reason: "must not leak" }).success,
+    ).toBe(false);
+    expect(
+      transactionPaymentMetadataSchema.safeParse({ ...metadata, payee: undefined }).success,
+    ).toBe(false);
+  });
+
+  it("defines exact, strict manual transaction mutation contracts", () => {
+    const create = {
+      accountLabel: "Cash wallet",
+      amount: "12.34",
+      categoryId: "category-groceries",
+      currency: "CAD",
+      description: "Neighbourhood market",
+      direction: "OUTFLOW",
+      postedDate: "2026-07-15",
+    } as const;
+    expect(manualTransactionCreateRequestSchema.parse(create)).toEqual(create);
+    const quickCreate = { ...create, accountLabel: "RBC Credit" };
+    delete (quickCreate as { categoryId?: string }).categoryId;
+    expect(manualTransactionCreateRequestSchema.parse(quickCreate)).toEqual(quickCreate);
+    expect(
+      manualTransactionCreateRequestSchema.parse({ ...create, rememberMerchant: true }),
+    ).toEqual({ ...create, rememberMerchant: true });
+    expect(
+      manualTransactionCreateRequestSchema.safeParse({
+        ...quickCreate,
+        rememberMerchant: true,
+      }).success,
+    ).toBe(false);
+    expect(
+      manualTransactionCreateRequestSchema.safeParse({ ...create, rememberMerchant: false })
+        .success,
+    ).toBe(false);
+    expect(
+      manualTransactionCreateRequestSchema.safeParse({ ...create, amount: 12.34 }).success,
+    ).toBe(false);
+    expect(
+      manualTransactionCreateRequestSchema.safeParse({ ...create, amount: "12.345" }).success,
+    ).toBe(false);
+    expect(
+      manualTransactionCreateRequestSchema.safeParse({ ...create, currency: "JPY" }).success,
+    ).toBe(false);
+    expect(
+      manualTransactionCreateRequestSchema.safeParse({ ...create, currency: "ZZZ" }).success,
+    ).toBe(false);
+    expect(
+      manualTransactionCreateRequestSchema.safeParse({ ...create, plaidTransactionId: "forged" })
+        .success,
+    ).toBe(false);
+
+    expect(
+      manualTransactionUpdateRequestSchema.parse({
+        amount: "0.01",
+        description: "Corrected text",
+        version: 2,
+      }),
+    ).toEqual({ amount: "0.01", description: "Corrected text", version: 2 });
+    expect(manualTransactionUpdateRequestSchema.safeParse({ version: 2 }).success).toBe(false);
+    expect(manualTransactionDeleteRequestSchema.parse({ version: 3 })).toEqual({ version: 3 });
+    expect(decimalAmountToMinorUnits("0.01", "CAD")).toBe(1);
+    expect(decimalAmountToMinorUnits("12.30", "USD")).toBe(1230);
+    expect(() => decimalAmountToMinorUnits("100", "JPY")).toThrow();
+  });
+
+  it("defines strict non-writing quick-entry preview variants", () => {
+    const preview = {
+      accountLabel: "RBC Credit",
+      amount: "12.34",
+      currency: "CAD",
+      description: "IKEA",
+      direction: "OUTFLOW",
+      postedDate: "2026-07-15",
+    } as const;
+    expect(manualTransactionPreviewRequestSchema.parse(preview)).toEqual(preview);
+    expect(
+      manualTransactionPreviewRequestSchema.safeParse({
+        ...preview,
+        categoryId: "category-expense-shopping",
+      }).success,
+    ).toBe(false);
+
+    const category = {
+      active: true,
+      createdAt: "2026-07-15T12:00:00.000Z",
+      editable: true,
+      id: "category-expense-shopping",
+      kind: "EXPENSE",
+      name: "Shopping",
+      systemKey: null,
+      updatedAt: "2026-07-15T12:00:00.000Z",
+      version: 1,
+    } as const;
+    for (const kind of ["KNOWN_MERCHANT", "NEW_MERCHANT"] as const) {
+      expect(
+        manualTransactionPreviewResponseSchema.parse({
+          data: { category, kind },
+          meta: {},
+        }),
+      ).toBeDefined();
+    }
+    expect(
+      manualTransactionPreviewResponseSchema.safeParse({
+        data: { category, kind: "UNKNOWN", transactionId: "transaction-forged" },
+        meta: {},
+      }).success,
+    ).toBe(false);
+  });
+
+  it("returns only canonical manual transaction fields", () => {
+    const transaction = {
+      accountLabel: "Cash wallet",
+      amountMinor: 1234,
+      reimbursementMinor: 0,
+      categorizationSource: "MANUAL",
+      categoryId: "category-groceries",
+      createdAt: "2026-07-15T12:00:00.000Z",
+      currency: "CAD",
+      description: "Neighbourhood market",
+      direction: "OUTFLOW",
+      id: "transaction-manual-1",
+      merchantName: "Neighbourhood market",
+      normalizedMerchant: "neighbourhood market",
+      postedDate: "2026-07-15",
+      source: "MANUAL",
+      status: "POSTED",
+      updatedAt: "2026-07-15T12:00:00.000Z",
+      version: 1,
+    } as const;
+
+    expect(
+      manualTransactionCreateResponseSchema.parse({
+        data: { categoryConfirmationRequired: false, transaction },
+        meta: {},
+      }),
+    ).toBeDefined();
+    expect(
+      manualTransactionMutationResponseSchema.parse({
+        data: { transaction: { ...transaction, status: "REMOVED", version: 2 } },
+        meta: {},
+      }),
+    ).toBeDefined();
+    expect(
+      manualTransactionCreateResponseSchema.safeParse({
+        data: { transaction: { ...transaction, status: "REMOVED" } },
+        meta: {},
+      }).success,
+    ).toBe(false);
+    expect(
+      manualTransactionCreateResponseSchema.safeParse({
+        data: { transaction: { ...transaction, providerAmountDecimal: "12.34" } },
+        meta: {},
+      }).success,
+    ).toBe(false);
+  });
+
+  it("defines strict quick-entry category create and bounded suggestion contracts", () => {
+    expect(categoryCreateRequestSchema.parse({ kind: "EXPENSE", name: "Restaurant" })).toEqual({
+      kind: "EXPENSE",
+      name: "Restaurant",
+    });
+    expect(
+      categoryCreateRequestSchema.safeParse({ kind: "INCOME", name: "Restaurant" }).success,
+    ).toBe(false);
+    expect(
+      categoryCreateRequestSchema.safeParse({ kind: "EXPENSE", name: "Bad\u0000Name" }).success,
+    ).toBe(false);
+    expect(
+      categoryCreateRequestSchema.safeParse({ kind: "EXPENSE", name: "<script>" }).success,
+    ).toBe(false);
+
+    const category = {
+      active: true,
+      createdAt: "2026-07-15T12:00:00.000Z",
+      editable: true,
+      id: "category-expense-restaurant",
+      kind: "EXPENSE",
+      name: "Restaurant",
+      systemKey: null,
+      updatedAt: "2026-07-15T12:00:00.000Z",
+      version: 1,
+    } as const;
+    expect(categoryMutationResponseSchema.parse({ data: { category }, meta: {} })).toBeDefined();
+    expect(
+      categorySuggestionsResponseSchema.parse({
+        data: {
+          suggestions: [
+            { category, reason: "RECENT_MERCHANT" },
+            {
+              category: { ...category, id: "category-expense-shopping", name: "Shopping" },
+              reason: "POPULAR_EXPENSE",
+            },
+          ],
+          transactionId: "transaction-manual-1",
+        },
+        meta: {},
+      }),
+    ).toBeDefined();
+    expect(
+      categorySuggestionsResponseSchema.safeParse({
+        data: {
+          suggestions: [
+            { category, reason: "POPULAR_EXPENSE" },
+            { category: { ...category, id: "category-2" }, reason: "POPULAR_EXPENSE" },
+            { category: { ...category, id: "category-3" }, reason: "POPULAR_EXPENSE" },
+          ],
+          transactionId: "transaction-manual-1",
+        },
+        meta: {},
+      }).success,
+    ).toBe(false);
+  });
+
+  it("defines a strict transaction-level category override contract", () => {
+    const request = { categoryId: "category-groceries", version: 2 } as const;
+    expect(transactionCategoryOverrideRequestSchema.parse(request)).toEqual(request);
+    expect(
+      transactionCategoryOverrideRequestSchema.safeParse({ ...request, applyToMerchant: true })
+        .success,
+    ).toBe(false);
+
+    const transaction = {
+      accountId: "account-1",
+      accountLabel: null,
+      amountMinor: 1234,
+      reimbursementMinor: 0,
+      authorizedDate: "2026-07-14",
+      categorizationSource: "MANUAL",
+      categoryId: "category-groceries",
+      categoryRuleId: null,
+      createdAt: "2026-07-15T12:00:00.000Z",
+      currency: "CAD",
+      description: "Neighbourhood market",
+      direction: "OUTFLOW",
+      id: "transaction-plaid-1",
+      merchantName: "Neighbourhood Market",
+      needsReview: false,
+      normalizedMerchant: "neighbourhood market",
+      paymentMetadata: {
+        payee: null,
+        payer: null,
+        paymentMethod: null,
+        referenceNumber: null,
+      },
+      postedDate: "2026-07-15",
+      reviewReason: null,
+      source: "PLAID",
+      status: "POSTED",
+      updatedAt: "2026-07-15T13:00:00.000Z",
+      version: 3,
+    } as const;
+    const response = { data: { transaction }, meta: {} } as const;
+    expect(transactionCategoryOverrideResponseSchema.parse(response)).toEqual(response);
+    expect(
+      transactionCategoryOverrideResponseSchema.safeParse({
+        data: { transaction: { ...transaction, providerPayload: "private" } },
+        meta: {},
+      }).success,
+    ).toBe(false);
+
+    expect(merchantRuleCorrectionRequestSchema.parse(request)).toEqual(request);
+    const ruleResponse = {
+      data: {
+        merchantRule: {
+          active: true,
+          categoryId: "category-groceries",
+          createdAt: "2026-07-15T13:00:00.000Z",
+          displayMerchant: "Neighbourhood Market",
+          id: "merchant-rule-market-1",
+          normalizedMerchant: "neighbourhood market",
+          updatedAt: "2026-07-15T13:00:00.000Z",
+          version: 1,
+        },
+        transaction,
+      },
+      meta: { historicalTransactionsChanged: 0 },
+    } as const;
+    expect(merchantRuleCorrectionResponseSchema.parse(ruleResponse)).toEqual(ruleResponse);
+    expect(
+      merchantRuleCorrectionResponseSchema.safeParse({
+        ...ruleResponse,
+        meta: { historicalTransactionsChanged: 1 },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("defines strict, cursor-paginated merchant-rule management contracts", () => {
+    expect(parseMerchantRuleListQuery(new URLSearchParams("active=true&pageSize=25"))).toEqual({
+      active: true,
+      pageSize: 25,
+    });
+    expect(() =>
+      parseMerchantRuleListQuery(new URLSearchParams("active=true&active=false")),
+    ).toThrow();
+    expect(() =>
+      parseMerchantRuleListQuery(new URLSearchParams("sort=normalized_merchant")),
+    ).toThrow();
+    expect(
+      parseMerchantRulePreviewQuery(
+        new URLSearchParams("displayMerchant=Acme+Store+42&categoryId=category-food"),
+      ),
+    ).toEqual({ categoryId: "category-food", displayMerchant: "Acme Store 42" });
+
+    const create = { categoryId: "category-food", displayMerchant: "Acme Store 42" };
+    expect(merchantRuleCreateRequestSchema.parse(create)).toEqual(create);
+    expect(
+      merchantRuleCreateRequestSchema.safeParse({ ...create, normalizedMerchant: "forged" })
+        .success,
+    ).toBe(false);
+    expect(merchantRuleUpdateRequestSchema.parse({ active: false, version: 2 })).toEqual({
+      active: false,
+      version: 2,
+    });
+    expect(merchantRuleUpdateRequestSchema.safeParse({ version: 2 }).success).toBe(false);
+
+    const rule = {
+      active: true,
+      categoryId: "category-food",
+      createdAt: "2026-07-15T13:00:00.000Z",
+      displayMerchant: "Acme Store 42",
+      id: "merchant-rule-acme",
+      normalizedMerchant: "acme",
+      updatedAt: "2026-07-15T13:00:00.000Z",
+      version: 1,
+    } as const;
+    const impact = {
+      conflictingTransactions: 2,
+      historicalTransactionsChanged: 0,
+      matchingTransactions: 3,
+    } as const;
+    expect(
+      merchantRuleListResponseSchema.parse({
+        data: { rules: [rule] },
+        meta: {
+          hasMore: false,
+          nextCursor: null,
+          query: { active: true, pageSize: 25 },
+        },
+      }),
+    ).toBeDefined();
+    expect(
+      merchantRuleMutationResponseSchema.parse({
+        data: { merchantRule: rule },
+        meta: impact,
+      }),
+    ).toBeDefined();
+    expect(
+      merchantRulePreviewResponseSchema.parse({
+        data: {
+          existingRule: null,
+          proposedRule: {
+            categoryId: "category-food",
+            displayMerchant: "Acme Store 42",
+            normalizedMerchant: "acme",
+          },
+        },
+        meta: impact,
+      }),
+    ).toBeDefined();
+    expect(
+      merchantRuleMutationResponseSchema.safeParse({
+        data: { merchantRule: rule },
+        meta: { ...impact, historicalTransactionsChanged: 1 },
+      }).success,
+    ).toBe(false);
+  });
+
   it("represents exact money without floating point or implicit sign", () => {
     expect(
       moneySchema.parse({ amountMinor: 12345, currency: "CAD", direction: "OUTFLOW" }),
@@ -346,5 +589,206 @@ describe("ledger primitive contracts", () => {
     expect(calendarDateSchema.parse("2024-02-29")).toBe("2024-02-29");
     expect(calendarDateSchema.safeParse("2025-02-29").success).toBe(false);
     expect(calendarDateSchema.safeParse("2025-2-01").success).toBe(false);
+  });
+});
+
+describe("transaction read contracts", () => {
+  const transaction = {
+    accountId: "account-1",
+    accountLabel: null,
+    amountMinor: 14327,
+    reimbursementMinor: 0,
+    authorizedDate: "2026-07-14",
+    categorizationSource: "PLAID",
+    categoryId: "category-shopping",
+    categoryRuleId: null,
+    createdAt: "2026-07-15T12:00:00.000Z",
+    currency: "CAD",
+    description: "AMZN Mktp CA",
+    direction: "OUTFLOW",
+    id: "transaction-amazon-1",
+    merchantName: "Amazon",
+    needsReview: false,
+    normalizedMerchant: null,
+    paymentMetadata: {
+      payee: null,
+      payer: null,
+      paymentMethod: null,
+      referenceNumber: null,
+    },
+    postedDate: "2026-07-15",
+    reviewReason: null,
+    source: "PLAID",
+    status: "POSTED",
+    updatedAt: "2026-07-15T12:00:00.000Z",
+    version: 1,
+  } as const;
+
+  it("parses one allowlisted, URL-reproducible transaction query", () => {
+    const query = parseTransactionListQuery(
+      new URLSearchParams([
+        ["accountId", "account-1"],
+        ["categoryId", "category-shopping"],
+        ["categorizationSource", "PLAID"],
+        ["currency", "CAD"],
+        ["dateFrom", "2026-07-01"],
+        ["dateTo", "2026-07-31"],
+        ["normalizedMerchant", "neighbourhood market"],
+        ["needsReview", "false"],
+        ["pageSize", "25"],
+        ["reportMetric", "NET_SPENDING"],
+        ["sort", "AMOUNT_DESC"],
+        ["source", "PLAID"],
+        ["status", "POSTED"],
+      ]),
+    );
+
+    expect(query).toEqual({
+      accountId: "account-1",
+      categorizationSource: "PLAID",
+      categoryId: "category-shopping",
+      currency: "CAD",
+      dateFrom: "2026-07-01",
+      dateTo: "2026-07-31",
+      normalizedMerchant: "neighbourhood market",
+      needsReview: false,
+      pageSize: 25,
+      reportMetric: "NET_SPENDING",
+      sort: "AMOUNT_DESC",
+      source: "PLAID",
+      status: "POSTED",
+    });
+    expect(parseTransactionListQuery(new URLSearchParams())).toEqual({
+      pageSize: 50,
+      sort: "POSTED_DATE_DESC",
+    });
+    expect(
+      parseTransactionListQuery(new URLSearchParams("categorizationSource=RULE&pageSize=10")),
+    ).toEqual({ categorizationSource: "RULE", pageSize: 10, sort: "POSTED_DATE_DESC" });
+  });
+
+  it("rejects unknown, repeated, and malformed transaction query values", () => {
+    for (const query of [
+      "unsafeWhere=1%3D1",
+      "status=POSTED&status=REMOVED",
+      "needsReview=1",
+      "sort=posted_date%20desc",
+      "pageSize=0",
+      "cursor=not+base64url",
+      "merchantMissing=false",
+      "merchantMissing=true&normalizedMerchant=acme",
+      "reportMetric=NET_SPENDING&status=PENDING",
+      "reportMetric=INCOME",
+    ]) {
+      expect(() => parseTransactionListQuery(new URLSearchParams(query))).toThrow();
+    }
+  });
+
+  it("parses the explicit missing-merchant net-spending drill-down population", () => {
+    expect(
+      parseTransactionListQuery(
+        new URLSearchParams(
+          "dateFrom=2026-07-01&dateTo=2026-07-31&currency=CAD&merchantMissing=true&reportMetric=NET_SPENDING",
+        ),
+      ),
+    ).toEqual({
+      currency: "CAD",
+      dateFrom: "2026-07-01",
+      dateTo: "2026-07-31",
+      merchantMissing: true,
+      pageSize: 50,
+      reportMetric: "NET_SPENDING",
+      sort: "POSTED_DATE_DESC",
+    });
+  });
+
+  it("parses CSV export filters without accepting pagination-only state", () => {
+    expect(
+      parseTransactionCsvExportQuery(
+        new URLSearchParams(
+          "accountId=account-1&categoryId=category-food&categorizationSource=RULE&" +
+            "currency=CAD&dateFrom=2026-01-01&dateTo=2026-01-31&needsReview=false&" +
+            "normalizedMerchant=fixture+cafe&reportMetric=NET_SPENDING&source=PLAID&" +
+            "status=POSTED&sort=AMOUNT_ASC",
+        ),
+      ),
+    ).toEqual({
+      accountId: "account-1",
+      categorizationSource: "RULE",
+      categoryId: "category-food",
+      currency: "CAD",
+      dateFrom: "2026-01-01",
+      dateTo: "2026-01-31",
+      needsReview: false,
+      normalizedMerchant: "fixture cafe",
+      reportMetric: "NET_SPENDING",
+      sort: "AMOUNT_ASC",
+      source: "PLAID",
+      status: "POSTED",
+    });
+    expect(parseTransactionCsvExportQuery(new URLSearchParams())).toEqual({
+      sort: "POSTED_DATE_DESC",
+    });
+
+    for (const query of [
+      "cursor=eyJ2IjoxfQ",
+      "pageSize=100",
+      "unknown=value",
+      "source=PLAID&source=CSV",
+      "merchantMissing=true&normalizedMerchant=fixture",
+      "reportMetric=NET_SPENDING&status=PENDING",
+    ]) {
+      expect(() => parseTransactionCsvExportQuery(new URLSearchParams(query))).toThrow();
+    }
+  });
+
+  it("defines strict paginated list and traceable detail responses", () => {
+    const listResponse = {
+      data: { transactions: [transaction] },
+      meta: {
+        hasMore: true,
+        nextCursor: "eyJ2IjoxfQ",
+        query: { pageSize: 25, sort: "POSTED_DATE_DESC" },
+      },
+    } as const;
+    expect(transactionListResponseSchema.parse(listResponse)).toEqual(listResponse);
+
+    const detailResponse = {
+      data: {
+        transaction: {
+          ...transaction,
+          categoryAudits: [
+            {
+              createdAt: "2026-07-15T13:00:00.000Z",
+              id: "category-audit-1",
+              newCategoryId: "category-shopping",
+              newCategoryRuleId: null,
+              newSource: "MANUAL",
+              oldCategoryId: null,
+              oldCategoryRuleId: null,
+              oldSource: "UNCLASSIFIED",
+              reason: "OWNER_TRANSACTION_OVERRIDE",
+            },
+          ],
+          lifecycle: {
+            pendingTransactionId: "transaction-amazon-pending",
+            replacedByTransactionId: null,
+          },
+        },
+      },
+      meta: {},
+    } as const;
+    expect(transactionDetailResponseSchema.parse(detailResponse)).toEqual(detailResponse);
+    expect(
+      transactionDetailResponseSchema.safeParse({
+        ...detailResponse,
+        data: {
+          transaction: {
+            ...detailResponse.data.transaction,
+            providerPayload: { lineItems: ["must not leak"] },
+          },
+        },
+      }).success,
+    ).toBe(false);
   });
 });
