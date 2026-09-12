@@ -165,7 +165,6 @@ function validateRestoreRelationships(document: FullJsonExport): Transaction[] {
     throw new FullJsonRestoreError("INVALID_SYSTEM_CATEGORY");
   }
 
-  const rules = new Map(data.merchantRules.map((rule) => [rule.id, rule]));
   for (const rule of data.merchantRules) assertReference(categoryIds, rule.categoryId);
   for (const subscription of data.subscriptions) {
     assertReference(categoryIds, subscription.categoryId);
@@ -184,11 +183,7 @@ function validateRestoreRelationships(document: FullJsonExport): Transaction[] {
     if (transaction.source === "CSV" && transaction.importFingerprint === null) {
       throw new FullJsonRestoreError("INVALID_SOURCE_IDENTITY");
     }
-    if (
-      transaction.categoryRuleId !== null &&
-      (transaction.categoryId === null ||
-        rules.get(transaction.categoryRuleId)?.categoryId !== transaction.categoryId)
-    ) {
+    if (transaction.categoryRuleId !== null && transaction.categoryId === null) {
       throw new FullJsonRestoreError("DANGLING_RELATIONSHIP");
     }
   }

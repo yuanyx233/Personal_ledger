@@ -406,6 +406,14 @@ describe("full JSON local restore", () => {
       new FullJsonRestoreError("DANGLING_RELATIONSHIP"),
     );
 
+    const missingRuleCategory = fixture();
+    missingRuleCategory.data.transactions.find(
+      ({ id }) => id === "transaction-expense",
+    )!.categoryId = null;
+    expect(() => createFullJsonRestoreSql(missingRuleCategory)).toThrow(
+      new FullJsonRestoreError("DANGLING_RELATIONSHIP"),
+    );
+
     const source = fixture();
     const csvRow = source.data.transactions.find(({ id }) => id === "transaction-transfer-right")!;
     csvRow.importFingerprint = null;
@@ -445,6 +453,25 @@ describe("full JSON local restore", () => {
     });
 
     expect(() => createFullJsonRestoreSql(changedPlan)).not.toThrow();
+  });
+
+  it("restores a historical rule-categorized transaction after the rule changes category", () => {
+    const changedRule = fixture();
+    changedRule.data.categories.push({
+      active: true,
+      createdAt: NOW,
+      editable: true,
+      id: "category-expense-current-rule",
+      kind: "EXPENSE",
+      name: "Current rule category",
+      systemKey: null,
+      updatedAt: NOW,
+      version: 1,
+    });
+    changedRule.recordCounts.categories += 1;
+    changedRule.data.merchantRules[0]!.categoryId = "category-expense-current-rule";
+
+    expect(() => createFullJsonRestoreSql(changedRule)).not.toThrow();
   });
 
   it("restores an editable custom transfer category without counting it as income or spending", () => {
