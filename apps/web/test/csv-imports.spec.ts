@@ -120,6 +120,8 @@ beforeEach(async () => {
     cloudflareEnv.DB.prepare("DELETE FROM transactions"),
     cloudflareEnv.DB.prepare("DELETE FROM merchant_rules"),
     cloudflareEnv.DB.prepare("DELETE FROM categories WHERE id = 'category-import-custom'"),
+    cloudflareEnv.DB.prepare("DELETE FROM accounts"),
+    cloudflareEnv.DB.prepare("DELETE FROM connections"),
   ]);
   await cloudflareEnv.DB.prepare(
     `INSERT INTO transactions (
@@ -432,8 +434,29 @@ describe("two-phase CSV import preview", () => {
     );
     expect(firstCommit.status).toBe(200);
 
-    await cloudflareEnv.DB.prepare(
-      `INSERT INTO transactions (
+    await cloudflareEnv.DB.batch([
+      cloudflareEnv.DB.prepare(
+        `INSERT INTO connections (
+          id, institution_id, institution_name, plaid_item_id,
+          access_token_ciphertext, access_token_iv, token_key_version,
+          status, created_at, updated_at, version
+        ) VALUES (
+          'connection-preview-legacy', 'ins_legacy', 'Legacy Bank',
+          'plaid-item-preview-legacy', X'01', X'02', 1, 'DISCONNECTED', ?, ?, 1
+        )`,
+      ).bind(currentTime, currentTime),
+      cloudflareEnv.DB.prepare(
+        `INSERT INTO accounts (
+          id, connection_id, plaid_account_id, display_name,
+          type, subtype, currency, enabled, created_at, updated_at, version
+        ) VALUES (
+          'account-preview-legacy', 'connection-preview-legacy',
+          'plaid-account-preview-legacy', 'Wallet', 'DEPOSITORY', 'CHECKING',
+          'CAD', 0, ?, ?, 1
+        )`,
+      ).bind(currentTime, currentTime),
+      cloudflareEnv.DB.prepare(
+        `INSERT INTO transactions (
          id, source, account_id, account_label, plaid_transaction_id,
          pending_transaction_id, import_fingerprint, status, authorized_date,
          posted_date, amount_minor, direction, currency, provider_amount_decimal,
@@ -441,13 +464,12 @@ describe("two-phase CSV import preview", () => {
          categorization_source, category_rule_id, needs_review, review_reason,
          created_at, updated_at, version
        ) VALUES (
-         'plaid-preview-only', 'PLAID', NULL, 'Wallet', 'plaid-preview-only',
+         'plaid-preview-only', 'PLAID', 'account-preview-legacy', NULL, 'plaid-preview-only',
          NULL, NULL, 'POSTED', NULL, '2026-02-02', 200, 'OUTFLOW', 'CAD', '2.00',
          'Plaid existing', NULL, NULL, NULL, 'PLAID', NULL, 0, NULL, ?, ?, 1
        )`,
-    )
-      .bind(currentTime, currentTime)
-      .run();
+      ).bind(currentTime, currentTime),
+    ]);
 
     const followupCsv = [
       "Date,Description,Amount,Direction,Currency,Account",
@@ -486,6 +508,23 @@ describe("two-phase CSV import preview", () => {
       workerEnv,
     );
     expect(missingDecisions.status).toBe(422);
+
+    const committed = await worker.fetch(
+      commitRequest({
+        decisions: preview.rows.slice(0, 2).map(({ rowNumber }) => ({
+          action: "SKIP" as const,
+          rowNumber,
+        })),
+        id: preview.id,
+        idempotencyKey: "csv-existing-fingerprint-0003",
+        version: preview.version,
+      }),
+      workerEnv,
+    );
+    expect(committed.status).toBe(200);
+    await expect(
+      cloudflareEnv.DB.prepare("SELECT COUNT(*) AS count FROM transactions").first("count"),
+    ).resolves.toBe(4);
   });
 
   it("creates a distinct transaction when the owner chooses IMPORT_NEW for a committed fingerprint", async () => {
@@ -1112,7 +1151,7 @@ describe("idempotent CSV import commit", () => {
         categorization_source: "MANUAL",
       },
       {
-        category_id: "category-expense-shopping",
+        category_id: "category-expense-food",
         category_rule_id: null,
         categorization_source: "RULE",
       },

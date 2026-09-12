@@ -25,19 +25,15 @@ export type DestructiveMigrationOperation =
   | "UPDATE";
 
 const recordCountsSchema = z.strictObject({
-  budgets: z.int().nonnegative().default(0),
-  accounts: z.int().nonnegative(),
+  budgets: z.int().nonnegative(),
   categories: z.int().nonnegative(),
   categoryAudits: z.int().nonnegative(),
-  connections: z.int().nonnegative(),
   importBatches: z.int().nonnegative(),
   importRows: z.int().nonnegative(),
   merchantRules: z.int().nonnegative(),
   subscriptionOccurrences: z.int().nonnegative(),
   subscriptions: z.int().nonnegative(),
   transactions: z.int().nonnegative(),
-  transferMatchAudits: z.int().nonnegative(),
-  transferMatches: z.int().nonnegative(),
 });
 
 const restoreCommandOutputSchema = z.strictObject({

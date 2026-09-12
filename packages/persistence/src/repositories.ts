@@ -191,9 +191,7 @@ function encodeTransactionCursor(
 export interface TransactionRecord {
   id: string;
   source: "PLAID" | "MANUAL" | "CSV";
-  accountId: string | null;
   accountLabel: string | null;
-  plaidTransactionId: string | null;
   pendingTransactionId: string | null;
   status: "PENDING" | "POSTED" | "REMOVED";
   authorizedDate: string | null;
@@ -202,6 +200,11 @@ export interface TransactionRecord {
   reimbursementMinor: number;
   direction: "INFLOW" | "OUTFLOW";
   currency: string;
+  installment?: {
+    count: number;
+    groupId: string;
+    number: number;
+  } | null;
   rawDescription: string;
   merchantName: string | null;
   paymentMetadata: TransactionPaymentMetadata;
@@ -209,11 +212,6 @@ export interface TransactionRecord {
   categoryRuleId: string | null;
   categorizationSource: "MANUAL" | "RULE" | "PLAID" | "UNCLASSIFIED";
   normalizedMerchant: string | null;
-  plaidPersonalFinanceCategory: {
-    confidenceLevel: "VERY_HIGH" | "HIGH" | "MEDIUM" | "LOW" | "UNKNOWN" | null;
-    detailed: string;
-    primary: string;
-  } | null;
   needsReview: boolean;
   reviewReason: string | null;
   createdAt: string;
@@ -226,7 +224,6 @@ export interface TransactionRow {
   source: TransactionRecord["source"];
   account_id: string | null;
   account_label: string | null;
-  plaid_transaction_id: string | null;
   pending_transaction_id: string | null;
   status: TransactionRecord["status"];
   authorized_date: string | null;
@@ -235,6 +232,9 @@ export interface TransactionRow {
   reimbursement_minor: number;
   direction: TransactionRecord["direction"];
   currency: string;
+  installment_group_id: string | null;
+  installment_number: number | null;
+  installment_count: number | null;
   raw_description: string;
   merchant_name: string | null;
   payment_metadata_json: string | null;
@@ -242,9 +242,6 @@ export interface TransactionRow {
   category_rule_id: string | null;
   categorization_source: TransactionRecord["categorizationSource"];
   normalized_merchant: string | null;
-  plaid_pfc_confidence: "VERY_HIGH" | "HIGH" | "MEDIUM" | "LOW" | "UNKNOWN" | null;
-  plaid_pfc_detailed: string | null;
-  plaid_pfc_primary: string | null;
   needs_review: number;
   review_reason: string | null;
   created_at: string;
@@ -312,11 +309,27 @@ interface TransactionCategoryAuditRow {
 }
 
 export const TRANSACTION_COLUMNS = `
-  id, source, account_id, account_label, plaid_transaction_id,
+  id, source, account_id, account_label,
   pending_transaction_id, status, authorized_date, posted_date, amount_minor, reimbursement_minor,
   direction, currency, raw_description, merchant_name, payment_metadata_json, category_id,
   category_rule_id, categorization_source, needs_review, review_reason, created_at, updated_at,
-  version, normalized_merchant, plaid_pfc_primary, plaid_pfc_detailed, plaid_pfc_confidence
+  version, normalized_merchant, installment_group_id, installment_number, installment_count
+`;
+
+const READ_TRANSACTION_COLUMNS = `
+  ledger_transaction.id, ledger_transaction.source, ledger_transaction.account_id,
+  COALESCE(ledger_transaction.account_label, account.display_name) AS account_label,
+  ledger_transaction.pending_transaction_id, ledger_transaction.status,
+  ledger_transaction.authorized_date, ledger_transaction.posted_date,
+  ledger_transaction.amount_minor, ledger_transaction.reimbursement_minor,
+  ledger_transaction.direction, ledger_transaction.currency, ledger_transaction.raw_description,
+  ledger_transaction.merchant_name, ledger_transaction.payment_metadata_json,
+  ledger_transaction.category_id, ledger_transaction.category_rule_id,
+  ledger_transaction.categorization_source, ledger_transaction.needs_review,
+  ledger_transaction.review_reason, ledger_transaction.created_at, ledger_transaction.updated_at,
+  ledger_transaction.version, ledger_transaction.normalized_merchant,
+  ledger_transaction.installment_group_id, ledger_transaction.installment_number,
+  ledger_transaction.installment_count
 `;
 
 const SORT_SQL: Readonly<Record<z.infer<typeof transactionSortSchema>, string>> = {
@@ -346,8 +359,15 @@ function buildTransactionFilters(query: TransactionFilterQuery): {
     bindings.push(...values);
   };
 
-  if (query.accountId)
-    addFilter("(account_id = ? OR account_label = ?)", query.accountId, query.accountId);
+  if (query.accountId) {
+    addFilter(
+      `COALESCE(account_label, (
+        SELECT display_name FROM accounts AS filter_account
+        WHERE filter_account.id = transactions.account_id
+      )) = ?`,
+      query.accountId,
+    );
+  }
   if (query.categoryId) addFilter("category_id = ?", query.categoryId);
   if (query.categorizationSource) {
     addFilter("categorization_source = ?", query.categorizationSource);
@@ -365,16 +385,6 @@ function buildTransactionFilters(query: TransactionFilterQuery): {
         SELECT 1 FROM categories AS report_category
         WHERE report_category.id = transactions.category_id
           AND report_category.kind = 'EXPENSE'
-      )`,
-    );
-    conditions.push(
-      `NOT EXISTS (
-        SELECT 1 FROM transfer_matches AS active_match
-        WHERE active_match.status IN ('AUTO_CONFIRMED', 'CONFIRMED')
-          AND (
-            active_match.left_transaction_id = transactions.id OR
-            active_match.right_transaction_id = transactions.id
-          )
       )`,
     );
   }
@@ -405,9 +415,7 @@ export function toTransactionRecord(row: TransactionRow): TransactionRecord {
   return {
     id: row.id,
     source: row.source,
-    accountId: row.account_id,
     accountLabel: row.account_label,
-    plaidTransactionId: row.plaid_transaction_id,
     pendingTransactionId: row.pending_transaction_id,
     status: row.status,
     authorizedDate: row.authorized_date,
@@ -416,6 +424,17 @@ export function toTransactionRecord(row: TransactionRow): TransactionRecord {
     reimbursementMinor: row.reimbursement_minor ?? 0,
     direction: row.direction,
     currency: row.currency,
+    ...(typeof row.installment_group_id === "string" &&
+    typeof row.installment_number === "number" &&
+    typeof row.installment_count === "number"
+      ? {
+          installment: {
+            count: row.installment_count,
+            groupId: row.installment_group_id,
+            number: row.installment_number,
+          },
+        }
+      : {}),
     rawDescription: row.raw_description,
     merchantName: row.merchant_name,
     paymentMetadata: projectTransactionPaymentMetadata(storedPaymentMetadata),
@@ -423,14 +442,6 @@ export function toTransactionRecord(row: TransactionRow): TransactionRecord {
     categoryRuleId: row.category_rule_id ?? null,
     categorizationSource: row.categorization_source,
     normalizedMerchant: row.normalized_merchant ?? null,
-    plaidPersonalFinanceCategory:
-      row.plaid_pfc_primary == null || row.plaid_pfc_detailed == null
-        ? null
-        : {
-            confidenceLevel: row.plaid_pfc_confidence ?? null,
-            detailed: row.plaid_pfc_detailed,
-            primary: row.plaid_pfc_primary,
-          },
     needsReview: row.needs_review === 1,
     reviewReason: row.review_reason,
     createdAt: row.created_at,
@@ -513,7 +524,11 @@ export class TransactionRepository {
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
     const statement = this.database.prepare(
-      `SELECT ${TRANSACTION_COLUMNS} FROM transactions
+      `SELECT * FROM (
+         SELECT ${READ_TRANSACTION_COLUMNS}
+         FROM transactions AS ledger_transaction
+         LEFT JOIN accounts AS account ON account.id = ledger_transaction.account_id
+       ) AS transactions
        ${whereClause}
        ORDER BY ${SORT_SQL[query.sort]} LIMIT ?`,
     );
@@ -524,7 +539,12 @@ export class TransactionRepository {
   async findById(id: unknown): Promise<TransactionRecord | null> {
     const validatedId = identifierSchema.parse(id);
     const row = await this.database
-      .prepare(`SELECT ${TRANSACTION_COLUMNS} FROM transactions WHERE id = ?`)
+      .prepare(
+        `SELECT ${READ_TRANSACTION_COLUMNS}
+         FROM transactions AS ledger_transaction
+         LEFT JOIN accounts AS account ON account.id = ledger_transaction.account_id
+         WHERE ledger_transaction.id = ?`,
+      )
       .bind(validatedId)
       .first<TransactionRow>();
     return row ? toTransactionRecord(row) : null;
@@ -594,7 +614,7 @@ export class TransactionRepository {
          LIMIT ?
        )
        SELECT filtered_transactions.*,
-              COALESCE(filtered_transactions.account_label, accounts.display_name)
+              COALESCE(filtered_transactions.account_label, account.display_name)
                 AS export_account_label,
               categories.name AS category_name,
               merchant_rules.display_merchant AS category_rule_display_merchant,
@@ -605,7 +625,7 @@ export class TransactionRepository {
               ) AS bank_confirmation,
               COALESCE(bank_match.import_match_count, 0) AS import_match_count
        FROM filtered_transactions
-       LEFT JOIN accounts ON accounts.id = filtered_transactions.account_id
+       LEFT JOIN accounts AS account ON account.id = filtered_transactions.account_id
        LEFT JOIN categories ON categories.id = filtered_transactions.category_id
        LEFT JOIN merchant_rules ON merchant_rules.id = filtered_transactions.category_rule_id
        LEFT JOIN subscription_occurrences AS subscription_occurrence

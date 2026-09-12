@@ -98,6 +98,47 @@ describe("category taxonomy repository", () => {
     expect(queries[1]!.sql).not.toMatch(/\b(?:INSERT|UPDATE|DELETE)\b/u);
   });
 
+  it("can ignore an exact rule for a merchant that must be confirmed every time", async () => {
+    const queries: Array<{ bindings: unknown[]; sql: string }> = [];
+    const database = {
+      prepare(sql: string) {
+        const query = { bindings: [] as unknown[], sql };
+        queries.push(query);
+        const statement = {
+          bind(...bindings: unknown[]) {
+            query.bindings = bindings;
+            return statement;
+          },
+          first: () =>
+            Promise.resolve({
+              ...OWNER_CATEGORY_ROW,
+              id: "category-expense-shopping",
+              name: "Shopping",
+            }),
+        };
+        return statement;
+      },
+    } as unknown as D1Database;
+
+    await expect(
+      new CategoryRepository(database).previewMerchant({
+        description: "Amazon",
+        ignoreExactRule: true,
+        preferredCategoryId: "category-expense-shopping",
+      }),
+    ).resolves.toMatchObject({
+      category: { id: "category-expense-shopping", name: "Shopping" },
+      kind: "NEW_MERCHANT",
+    });
+    expect(queries).toHaveLength(1);
+    expect(queries[0]!.bindings).toEqual([
+      "amazon",
+      "category-expense-shopping",
+      "category-expense-shopping",
+    ]);
+    expect(queries[0]!.sql).not.toContain("merchant_rules");
+  });
+
   it("returns a stable complete read model from one prepared statement", async () => {
     const queries: string[] = [];
     const database = {
@@ -294,134 +335,5 @@ describe("category taxonomy repository", () => {
       await expect(repository.createExpense(input)).rejects.toBeDefined();
     }
     expect(prepareCalls).toBe(0);
-  });
-
-  it("returns at most two expense suggestions with explainable deterministic reasons", async () => {
-    const prepared: string[] = [];
-    const database = {
-      prepare(sql: string) {
-        prepared.push(sql);
-        const statement = {
-          bind() {
-            return statement;
-          },
-          first: () => Promise.resolve({ normalized_merchant: "new cafe" }),
-          all: () =>
-            Promise.resolve({
-              results: [
-                {
-                  active: 1,
-                  created_at: "2026-07-16T00:00:00.000Z",
-                  editable: 1,
-                  id: "category-expense-food",
-                  kind: "EXPENSE",
-                  merchant_match_count: 2,
-                  name: "Food & Dining",
-                  system_key: null,
-                  updated_at: "2026-07-16T00:00:00.000Z",
-                  version: 1,
-                },
-                {
-                  active: 1,
-                  created_at: "2026-07-16T00:00:00.000Z",
-                  editable: 1,
-                  id: "category-expense-shopping",
-                  kind: "EXPENSE",
-                  merchant_match_count: 0,
-                  name: "Shopping",
-                  system_key: null,
-                  updated_at: "2026-07-16T00:00:00.000Z",
-                  version: 1,
-                },
-              ],
-            }),
-        };
-        return statement;
-      },
-    } as unknown as D1Database;
-
-    const result = await new CategoryRepository(database).suggestForTransaction("transaction-1", 2);
-    if (result === null) {
-      throw new Error("Expected category suggestions");
-    }
-    expect(result.transactionId).toBe("transaction-1");
-    expect(
-      result.suggestions.map(({ category, reason }) => ({ categoryId: category.id, reason })),
-    ).toEqual([
-      { categoryId: "category-expense-food", reason: "RECENT_MERCHANT" },
-      { categoryId: "category-expense-shopping", reason: "POPULAR_EXPENSE" },
-    ]);
-    expect(prepared[1]).toContain("LIMIT ?");
-  });
-
-  it("returns null for a missing transaction without querying category suggestions", async () => {
-    const queries: string[] = [];
-    const database = {
-      prepare(sql: string) {
-        queries.push(sql);
-        const statement = {
-          bind() {
-            return statement;
-          },
-          first: () => Promise.resolve(null),
-        };
-        return statement;
-      },
-    } as unknown as D1Database;
-
-    await expect(
-      new CategoryRepository(database).suggestForTransaction("transaction-missing"),
-    ).resolves.toBeNull();
-    expect(queries).toHaveLength(1);
-    expect(queries[0]).toContain("status != 'REMOVED'");
-  });
-
-  it("rejects invalid suggestion identifiers and limits before accessing the database", async () => {
-    let prepareCalls = 0;
-    const database = {
-      prepare() {
-        prepareCalls += 1;
-        throw new Error("database must not be reached");
-      },
-    } as unknown as D1Database;
-    const repository = new CategoryRepository(database);
-    const invalidQueries: Array<[string, number]> = [
-      ["", 1],
-      ["x".repeat(161), 1],
-      ["transaction-1", 0],
-      ["transaction-1", 3],
-      ["transaction-1", 1.5],
-    ];
-
-    for (const [transactionId, limit] of invalidQueries) {
-      await expect(repository.suggestForTransaction(transactionId, limit)).rejects.toThrow(
-        "Invalid category suggestion query.",
-      );
-    }
-    expect(prepareCalls).toBe(0);
-  });
-
-  it("falls back to popular expense categories for a merchantless transaction", async () => {
-    const queries: Array<{ bindings: unknown[]; sql: string }> = [];
-    const database = {
-      prepare(sql: string) {
-        const query = { bindings: [] as unknown[], sql };
-        queries.push(query);
-        const statement = {
-          all: () => Promise.resolve({ results: [] }),
-          bind(...bindings: unknown[]) {
-            query.bindings = bindings;
-            return statement;
-          },
-          first: () => Promise.resolve({ normalized_merchant: null }),
-        };
-        return statement;
-      },
-    } as unknown as D1Database;
-
-    await expect(
-      new CategoryRepository(database).suggestForTransaction("transaction-merchantless", 1),
-    ).resolves.toEqual({ suggestions: [], transactionId: "transaction-merchantless" });
-    expect(queries[1]!.bindings).toEqual(["", 1]);
   });
 });

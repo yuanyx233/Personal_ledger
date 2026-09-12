@@ -5,7 +5,6 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { createAppWorker, type AppEnv } from "../worker/index";
 import { clearCategoryAudits } from "./support/category-audits";
-import { clearTransferMatchAudits } from "./support/transfer-audits";
 
 const NOW = "2026-07-17T12:00:00.000Z";
 const IDENTITY = {
@@ -33,19 +32,16 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await clearCategoryAudits(cloudflareEnv.DB);
-  await clearTransferMatchAudits(cloudflareEnv.DB);
   await cloudflareEnv.DB.batch(
     [
       "import_rows",
       "import_batches",
-      "transfer_matches",
       "sync_events",
       "sync_run_requests",
       "sync_runs",
       "transactions",
       "merchant_rules",
       "categories WHERE system_key IS NULL",
-      "accounts",
       "connections",
       "connection_requests",
     ].map((table) => cloudflareEnv.DB.prepare(`DELETE FROM ${table}`)),
@@ -77,24 +73,6 @@ beforeEach(async () => {
   ]);
   await cloudflareEnv.DB.batch([
     cloudflareEnv.DB.prepare(
-      `INSERT INTO accounts (
-        id, connection_id, plaid_account_id, display_name, mask, type, subtype,
-        currency, enabled, created_at, updated_at, version
-      ) VALUES (
-        'account-chequing', 'connection-export', ?, 'Daily Chequing', ?,
-        'DEPOSITORY', 'CHECKING', 'CAD', 1, ?, ?, 1
-      )`,
-    ).bind("plaid-account-json-export-secret-1", "mask-json-export-secret-1", NOW, NOW),
-    cloudflareEnv.DB.prepare(
-      `INSERT INTO accounts (
-        id, connection_id, plaid_account_id, display_name, mask, type, subtype,
-        currency, enabled, created_at, updated_at, version
-      ) VALUES (
-        'account-credit', 'connection-export', ?, 'Credit Card', ?,
-        'CREDIT', 'CREDIT_CARD', 'CAD', 1, ?, ?, 1
-      )`,
-    ).bind("plaid-account-json-export-secret-2", "mask-json-export-secret-2", NOW, NOW),
-    cloudflareEnv.DB.prepare(
       `INSERT INTO categories (
         id, name, kind, editable, active, created_at, updated_at, version
       ) VALUES ('category-food', 'Food', 'EXPENSE', 1, 1, ?, ?, 1)`,
@@ -111,26 +89,24 @@ beforeEach(async () => {
   await cloudflareEnv.DB.batch([
     cloudflareEnv.DB.prepare(
       `INSERT INTO transactions (
-        id, source, account_id, plaid_transaction_id, status, posted_date,
+        id, source, account_label, import_fingerprint, status, posted_date,
         amount_minor, direction, currency, provider_amount_decimal, raw_description,
         merchant_name, payment_metadata_json, category_id, categorization_source,
-        category_rule_id, normalized_merchant, plaid_pfc_primary, plaid_pfc_detailed,
-        plaid_pfc_confidence, needs_review, created_at, updated_at, version
+        category_rule_id, normalized_merchant, needs_review, created_at, updated_at, version
       ) VALUES (
-        'transaction-export-1', 'PLAID', 'account-chequing', 'provider-transaction-1',
+        'transaction-export-1', 'CSV', 'Daily Chequing', ?,
         'POSTED', '2026-07-17', 1234, 'OUTFLOW', 'CAD', ?, 'Fixture Cafe purchase',
         'Fixture Cafe', '{"payee":"Fixture Cafe","payer":null,"paymentMethod":"CARD","referenceNumber":"ref-1","private":"metadata-secret"}',
-        'category-food', 'RULE', 'rule-cafe', 'fixture cafe', 'FOOD_AND_DRINK',
-        'FOOD_AND_DRINK_COFFEE', 'HIGH', 0, ?, ?, 3
+        'category-food', 'RULE', 'rule-cafe', 'fixture cafe', 0, ?, ?, 3
       )`,
-    ).bind("provider-decimal-json-export-secret", NOW, NOW),
+    ).bind("d".repeat(64), "provider-decimal-json-export-secret", NOW, NOW),
     cloudflareEnv.DB.prepare(
       `INSERT INTO transactions (
-        id, source, account_id, import_fingerprint, status, posted_date,
+        id, source, account_label, import_fingerprint, status, posted_date,
         amount_minor, direction, currency, raw_description, category_id,
         categorization_source, needs_review, created_at, updated_at, version
       ) VALUES (
-        'transaction-export-2', 'CSV', 'account-credit', ?, 'POSTED', '2026-07-17',
+        'transaction-export-2', 'CSV', 'Credit Card', ?, 'POSTED', '2026-07-17',
         1234, 'INFLOW', 'CAD', 'Card payment', 'category-food', 'MANUAL', 0, ?, ?, 1
       )`,
     ).bind("c".repeat(64), NOW, NOW),
@@ -145,27 +121,8 @@ beforeEach(async () => {
         'UNCLASSIFIED', 'RULE', 'RULE_CATEGORIZATION', ?, NULL, 'rule-cafe'
       )`,
     ).bind(NOW),
-    cloudflareEnv.DB.prepare(
-      `INSERT INTO transfer_matches (
-        id, left_transaction_id, right_transaction_id, status, confidence, evidence_json,
-        decision_reason, created_at, updated_at, version
-      ) VALUES (
-        'transfer-match-export', 'transaction-export-1', 'transaction-export-2',
-        'CONFIRMED', 'HIGH',
-        '{"amountMinor":1234,"currency":"CAD","dayDifference":0,"signals":["DESCRIPTION"]}',
-        'OWNER_CONFIRMED', ?, ?, 2
-      )`,
-    ).bind(NOW, NOW),
   ]);
   await cloudflareEnv.DB.batch([
-    cloudflareEnv.DB.prepare(
-      `INSERT INTO transfer_match_audits (
-        id, transfer_match_id, action, old_status, new_status, reason, match_version, created_at
-      ) VALUES (
-        'transfer-audit-export', 'transfer-match-export', 'CONFIRM', 'AUTO_CONFIRMED',
-        'CONFIRMED', 'OWNER_CONFIRMED', 2, ?
-      )`,
-    ).bind(NOW),
     cloudflareEnv.DB.prepare(
       `INSERT INTO import_batches (
         id, content_checksum, idempotency_key, status, preview_expires_at,
@@ -222,6 +179,30 @@ describe("complete versioned JSON export", () => {
     await cloudflareEnv.DB.prepare(
       "UPDATE transactions SET reimbursement_minor = 200 WHERE id = 'transaction-export-1'",
     ).run();
+    await cloudflareEnv.DB.batch([
+      cloudflareEnv.DB.prepare(
+        `INSERT INTO accounts (
+          id, connection_id, plaid_account_id, display_name, type, subtype,
+          currency, enabled, created_at, updated_at, version
+        ) VALUES (
+          'account-json-export-secret', 'connection-export',
+          'plaid-account-json-export-secret', 'Legacy Savings',
+          'DEPOSITORY', 'CHECKING', 'CAD', 0, ?, ?, 1
+        )`,
+      ).bind(NOW, NOW),
+      cloudflareEnv.DB.prepare(
+        `INSERT INTO transactions (
+          id, source, account_id, plaid_transaction_id, status, posted_date,
+          amount_minor, direction, currency, raw_description, category_id,
+          categorization_source, needs_review, created_at, updated_at, version
+        ) VALUES (
+          'transaction-export-plaid', 'PLAID', 'account-json-export-secret',
+          'plaid-transaction-json-export-secret', 'POSTED', '2026-07-16',
+          4000, 'OUTFLOW', 'CAD', 'Historical purchase', 'category-food',
+          'PLAID', 0, ?, ?, 1
+        )`,
+      ).bind(NOW, NOW),
+    ]);
     const response = await worker.fetch(
       new Request("https://ledger.example/api/v1/exports/data.json"),
       workerEnv,
@@ -238,16 +219,9 @@ describe("complete versioned JSON export", () => {
     expect(document).toMatchObject({
       exportKind: "PERSONAL_LEDGER_FULL",
       exportedAt: NOW,
-      schemaVersion: 4,
+      schemaVersion: 5,
       timezone: "America/Toronto",
     });
-    expect(document.data.connections).toEqual([
-      expect.objectContaining({ id: "connection-export", institutionName: "Export Bank" }),
-    ]);
-    expect(document.data.accounts.map(({ id }) => id)).toEqual([
-      "account-chequing",
-      "account-credit",
-    ]);
     expect(document.data.transactions).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -256,13 +230,16 @@ describe("complete versioned JSON export", () => {
           categoryRuleId: "rule-cafe",
           currency: "CAD",
           id: "transaction-export-1",
-          providerTransactionId: "provider-transaction-1",
+          accountLabel: "Daily Chequing",
+        }),
+        expect.objectContaining({
+          accountLabel: "Legacy Savings",
+          id: "transaction-export-plaid",
+          source: "PLAID",
         }),
       ]),
     );
     expect(document.data.categoryAudits).toHaveLength(1);
-    expect(document.data.transferMatches).toHaveLength(1);
-    expect(document.data.transferMatchAudits).toHaveLength(1);
     expect(document.data.importBatches).toHaveLength(1);
     expect(document.data.importRows).toHaveLength(1);
     expect(document.recordCounts.transactions).toBe(document.data.transactions.length);
@@ -272,6 +249,8 @@ describe("complete versioned JSON export", () => {
       "iv-json-export-secret",
       "plaid-item-json-export-secret",
       "plaid-account-json-export-secret",
+      "account-json-export-secret",
+      "plaid-transaction-json-export-secret",
       "mask-json-export-secret",
       "sync-cursor-json-export-secret",
       "webhook-payload-json-export-secret",
@@ -293,6 +272,10 @@ describe("complete versioned JSON export", () => {
       "accesstokenciphertext",
       "plaiditemid",
       "plaidaccountid",
+      "plaid_pfc",
+      "transfermatch",
+      '"connections"',
+      '"accounts"',
       '"mask"',
       "synccursor",
       "idempotencykey",

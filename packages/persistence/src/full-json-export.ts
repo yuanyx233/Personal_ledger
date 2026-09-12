@@ -20,28 +20,6 @@ export interface FullJsonExportRepositoryOptions {
   maximumTotalRecords?: number;
 }
 
-interface ConnectionRow {
-  created_at: string;
-  id: string;
-  institution_id: string;
-  institution_name: string;
-  updated_at: string;
-  version: number;
-}
-
-interface AccountRow {
-  connection_id: string;
-  created_at: string;
-  currency: string;
-  display_name: string;
-  enabled: number;
-  id: string;
-  subtype: "CHECKING" | "CREDIT_CARD";
-  type: "DEPOSITORY" | "CREDIT";
-  updated_at: string;
-  version: number;
-}
-
 interface CategoryRow {
   active: number;
   created_at: string;
@@ -79,15 +57,14 @@ interface TransactionRow {
   direction: "INFLOW" | "OUTFLOW";
   id: string;
   import_fingerprint: string | null;
+  installment_count: number | null;
+  installment_group_id: string | null;
+  installment_number: number | null;
   merchant_name: string | null;
   needs_review: number;
   normalized_merchant: string | null;
   payment_metadata_json: string | null;
   pending_transaction_id: string | null;
-  plaid_pfc_confidence: "VERY_HIGH" | "HIGH" | "MEDIUM" | "LOW" | "UNKNOWN" | null;
-  plaid_pfc_detailed: string | null;
-  plaid_pfc_primary: string | null;
-  plaid_transaction_id: string | null;
   posted_date: string;
   raw_description: string;
   review_reason: string | null;
@@ -108,30 +85,6 @@ interface CategoryAuditRow {
   old_source: TransactionRow["categorization_source"];
   reason: string;
   transaction_id: string;
-}
-
-interface TransferMatchRow {
-  confidence: "HIGH" | "AMBIGUOUS";
-  created_at: string;
-  decision_reason: string | null;
-  evidence_json: string;
-  id: string;
-  left_transaction_id: string;
-  right_transaction_id: string;
-  status: "AUTO_CONFIRMED" | "PENDING_REVIEW" | "CONFIRMED" | "BROKEN" | "IGNORED";
-  updated_at: string;
-  version: number;
-}
-
-interface TransferMatchAuditRow {
-  action: "CONFIRM" | "BREAK" | "IGNORE";
-  created_at: string;
-  id: string;
-  match_version: number;
-  new_status: "CONFIRMED" | "BROKEN" | "IGNORED";
-  old_status: TransferMatchRow["status"];
-  reason: "OWNER_CONFIRMED" | "OWNER_BROKE" | "OWNER_IGNORED";
-  transfer_match_id: string;
 }
 
 interface ImportBatchRow {
@@ -208,14 +161,6 @@ function resultRows<T>(results: D1Result<unknown>[], index: number): T[] {
   return (results[index]?.results ?? []) as T[];
 }
 
-function jsonObject(value: string): Record<string, unknown> {
-  const parsed = JSON.parse(value) as unknown;
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    throw new TypeError("Stored JSON must be an object.");
-  }
-  return parsed as Record<string, unknown>;
-}
-
 export class FullJsonExportRepository {
   private readonly maximumRecordsPerCollection: number;
   private readonly maximumTotalRecords: number;
@@ -239,19 +184,6 @@ export class FullJsonExportRepository {
     const statements = [
       this.database
         .prepare(
-          `SELECT id, institution_id, institution_name, created_at, updated_at, version
-           FROM connections ORDER BY id ASC LIMIT ?`,
-        )
-        .bind(limit),
-      this.database
-        .prepare(
-          `SELECT id, connection_id, display_name, type, subtype, currency, enabled,
-                  created_at, updated_at, version
-           FROM accounts ORDER BY id ASC LIMIT ?`,
-        )
-        .bind(limit),
-      this.database
-        .prepare(
           `SELECT id, name, kind, system_key, editable, active, created_at, updated_at, version
            FROM categories ORDER BY id ASC LIMIT ?`,
         )
@@ -265,13 +197,26 @@ export class FullJsonExportRepository {
         .bind(limit),
       this.database
         .prepare(
-          `SELECT id, source, account_id, account_label, plaid_transaction_id,
-                  pending_transaction_id, import_fingerprint, status, authorized_date, posted_date,
-                  amount_minor, reimbursement_minor, direction, currency, raw_description, merchant_name,
-                  payment_metadata_json, category_id, categorization_source, category_rule_id,
-                  normalized_merchant, plaid_pfc_primary, plaid_pfc_detailed,
-                  plaid_pfc_confidence, needs_review, review_reason, created_at, updated_at, version
-           FROM transactions ORDER BY id ASC LIMIT ?`,
+          `SELECT ledger_transaction.id, ledger_transaction.source,
+                  ledger_transaction.account_id,
+                  COALESCE(ledger_transaction.account_label, account.display_name,
+                    'Historical bank account') AS account_label,
+                  ledger_transaction.pending_transaction_id,
+                  ledger_transaction.import_fingerprint, ledger_transaction.status,
+                  ledger_transaction.authorized_date, ledger_transaction.posted_date,
+                  ledger_transaction.amount_minor, ledger_transaction.reimbursement_minor,
+                  ledger_transaction.direction, ledger_transaction.currency,
+                  ledger_transaction.raw_description, ledger_transaction.merchant_name,
+                  ledger_transaction.payment_metadata_json, ledger_transaction.category_id,
+                  ledger_transaction.categorization_source, ledger_transaction.category_rule_id,
+                  ledger_transaction.normalized_merchant, ledger_transaction.needs_review,
+                  ledger_transaction.review_reason, ledger_transaction.created_at,
+                  ledger_transaction.updated_at, ledger_transaction.version,
+                  ledger_transaction.installment_group_id, ledger_transaction.installment_number,
+                  ledger_transaction.installment_count
+           FROM transactions AS ledger_transaction
+           LEFT JOIN accounts AS account ON account.id = ledger_transaction.account_id
+           ORDER BY ledger_transaction.id ASC LIMIT ?`,
         )
         .bind(limit),
       this.database
@@ -279,20 +224,6 @@ export class FullJsonExportRepository {
           `SELECT id, transaction_id, old_category_id, new_category_id, old_source, new_source,
                   reason, created_at, old_category_rule_id, new_category_rule_id
            FROM category_audits ORDER BY id ASC LIMIT ?`,
-        )
-        .bind(limit),
-      this.database
-        .prepare(
-          `SELECT id, left_transaction_id, right_transaction_id, status, confidence,
-                  evidence_json, decision_reason, created_at, updated_at, version
-           FROM transfer_matches ORDER BY id ASC LIMIT ?`,
-        )
-        .bind(limit),
-      this.database
-        .prepare(
-          `SELECT id, transfer_match_id, action, old_status, new_status, reason,
-                  match_version, created_at
-           FROM transfer_match_audits ORDER BY id ASC LIMIT ?`,
         )
         .bind(limit),
       this.database
@@ -355,27 +286,7 @@ export class FullJsonExportRepository {
     }
 
     try {
-      const connections = resultRows<ConnectionRow>(results, 0).map((row) => ({
-        createdAt: row.created_at,
-        id: row.id,
-        institutionId: row.institution_id,
-        institutionName: row.institution_name,
-        updatedAt: row.updated_at,
-        version: row.version,
-      }));
-      const accounts = resultRows<AccountRow>(results, 1).map((row) => ({
-        connectionId: row.connection_id,
-        createdAt: row.created_at,
-        currency: row.currency,
-        displayName: row.display_name,
-        enabled: row.enabled === 1,
-        id: row.id,
-        subtype: row.subtype,
-        type: row.type,
-        updatedAt: row.updated_at,
-        version: row.version,
-      }));
-      const categories = resultRows<CategoryRow>(results, 2).map((row) => ({
+      const categories = resultRows<CategoryRow>(results, 0).map((row) => ({
         active: row.active === 1,
         createdAt: row.created_at,
         editable: row.editable === 1,
@@ -386,7 +297,7 @@ export class FullJsonExportRepository {
         updatedAt: row.updated_at,
         version: row.version,
       }));
-      const merchantRules = resultRows<MerchantRuleRow>(results, 3).map((row) => ({
+      const merchantRules = resultRows<MerchantRuleRow>(results, 1).map((row) => ({
         active: row.active === 1,
         categoryId: row.category_id,
         createdAt: row.created_at,
@@ -396,8 +307,7 @@ export class FullJsonExportRepository {
         updatedAt: row.updated_at,
         version: row.version,
       }));
-      const transactions = resultRows<TransactionRow>(results, 4).map((row) => ({
-        accountId: row.account_id,
+      const transactions = resultRows<TransactionRow>(results, 2).map((row) => ({
         accountLabel: row.account_label,
         amountMinor: row.amount_minor,
         reimbursementMinor: row.reimbursement_minor ?? 0,
@@ -411,6 +321,16 @@ export class FullJsonExportRepository {
         direction: row.direction,
         id: row.id,
         importFingerprint: row.import_fingerprint,
+        installment:
+          typeof row.installment_group_id === "string" &&
+          typeof row.installment_number === "number" &&
+          typeof row.installment_count === "number"
+            ? {
+                count: row.installment_count,
+                groupId: row.installment_group_id,
+                number: row.installment_number,
+              }
+            : null,
         merchantName: row.merchant_name,
         needsReview: row.needs_review === 1,
         normalizedMerchant: row.normalized_merchant,
@@ -418,23 +338,14 @@ export class FullJsonExportRepository {
           row.payment_metadata_json === null ? null : JSON.parse(row.payment_metadata_json),
         ),
         pendingTransactionId: row.pending_transaction_id,
-        plaidPersonalFinanceCategory:
-          row.plaid_pfc_primary === null || row.plaid_pfc_detailed === null
-            ? null
-            : {
-                confidenceLevel: row.plaid_pfc_confidence,
-                detailed: row.plaid_pfc_detailed,
-                primary: row.plaid_pfc_primary,
-              },
         postedDate: row.posted_date,
-        providerTransactionId: row.plaid_transaction_id,
         reviewReason: row.review_reason,
         source: row.source,
         status: row.status,
         updatedAt: row.updated_at,
         version: row.version,
       }));
-      const categoryAudits = resultRows<CategoryAuditRow>(results, 5).map((row) => ({
+      const categoryAudits = resultRows<CategoryAuditRow>(results, 3).map((row) => ({
         createdAt: row.created_at,
         id: row.id,
         newCategoryId: row.new_category_id,
@@ -446,38 +357,7 @@ export class FullJsonExportRepository {
         reason: row.reason,
         transactionId: row.transaction_id,
       }));
-      const transferMatches = resultRows<TransferMatchRow>(results, 6).map((row) => {
-        const evidence = jsonObject(row.evidence_json);
-        return {
-          confidence: row.confidence,
-          createdAt: row.created_at,
-          decisionReason: row.decision_reason,
-          evidence: {
-            amountMinor: evidence.amountMinor,
-            currency: evidence.currency,
-            dayDifference: evidence.dayDifference,
-            reason: evidence.reason ?? null,
-            signals: evidence.signals,
-          },
-          id: row.id,
-          leftTransactionId: row.left_transaction_id,
-          rightTransactionId: row.right_transaction_id,
-          status: row.status,
-          updatedAt: row.updated_at,
-          version: row.version,
-        };
-      });
-      const transferMatchAudits = resultRows<TransferMatchAuditRow>(results, 7).map((row) => ({
-        action: row.action,
-        createdAt: row.created_at,
-        id: row.id,
-        matchVersion: row.match_version,
-        newStatus: row.new_status,
-        oldStatus: row.old_status,
-        reason: row.reason,
-        transferMatchId: row.transfer_match_id,
-      }));
-      const importBatches = resultRows<ImportBatchRow>(results, 8).map((row) => ({
+      const importBatches = resultRows<ImportBatchRow>(results, 4).map((row) => ({
         committedAt: row.committed_at,
         contentChecksum: row.content_checksum,
         createdAt: row.created_at,
@@ -486,7 +366,7 @@ export class FullJsonExportRepository {
         status: row.status,
         version: row.version,
       }));
-      const importRows = resultRows<ImportRow>(results, 9).map((row) => {
+      const importRows = resultRows<ImportRow>(results, 5).map((row) => {
         const storedErrors = JSON.parse(row.errors_json) as unknown;
         const errors = Array.isArray(storedErrors)
           ? storedErrors
@@ -513,7 +393,7 @@ export class FullJsonExportRepository {
           validationStatus: row.validation_status,
         };
       });
-      const subscriptions = resultRows<SubscriptionRow>(results, 10).map((row) => ({
+      const subscriptions = resultRows<SubscriptionRow>(results, 6).map((row) => ({
         cancellationEffectiveDate: row.cancellation_effective_date,
         accountLabel: row.account_label,
         amountMinor: row.amount_minor,
@@ -532,7 +412,7 @@ export class FullJsonExportRepository {
         updatedAt: row.updated_at,
         version: row.version,
       }));
-      const subscriptionOccurrences = resultRows<SubscriptionOccurrenceRow>(results, 11).map(
+      const subscriptionOccurrences = resultRows<SubscriptionOccurrenceRow>(results, 7).map(
         (row) => ({
           createdAt: row.created_at,
           id: row.id,
@@ -546,19 +426,15 @@ export class FullJsonExportRepository {
         }),
       );
       const parsed = fullJsonExportDataSchema.safeParse({
-        budgets: resultRows(results, 12),
-        accounts,
+        budgets: resultRows(results, 8),
         categories,
         categoryAudits,
-        connections,
         importBatches,
         importRows,
         merchantRules,
         subscriptionOccurrences,
         subscriptions,
         transactions,
-        transferMatchAudits,
-        transferMatches,
       });
       if (!parsed.success) throw new TypeError("Stored export data failed schema validation.");
       return parsed.data;

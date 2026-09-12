@@ -8,7 +8,6 @@ import {
   calendarDateSchema,
   categoryCreateRequestSchema,
   categoryMutationResponseSchema,
-  categorySuggestionsResponseSchema,
   categoriesResponseSchema,
   cursorPaginationMetaSchema,
   cursorPaginationQuerySchema,
@@ -224,6 +223,15 @@ describe("ledger primitive contracts", () => {
     expect(
       manualTransactionCreateRequestSchema.parse({ ...create, rememberMerchant: true }),
     ).toEqual({ ...create, rememberMerchant: true });
+    expect(manualTransactionCreateRequestSchema.parse({ ...create, installmentCount: 3 })).toEqual({
+      ...create,
+      installmentCount: 3,
+    });
+    for (const installmentCount of [1, 61, 2.5, "3"]) {
+      expect(
+        manualTransactionCreateRequestSchema.safeParse({ ...create, installmentCount }).success,
+      ).toBe(false);
+    }
     expect(
       manualTransactionCreateRequestSchema.safeParse({
         ...quickCreate,
@@ -276,6 +284,9 @@ describe("ledger primitive contracts", () => {
     } as const;
     expect(manualTransactionPreviewRequestSchema.parse(preview)).toEqual(preview);
     expect(
+      manualTransactionPreviewRequestSchema.parse({ ...preview, installmentCount: 12 }),
+    ).toEqual({ ...preview, installmentCount: 12 });
+    expect(
       manualTransactionPreviewRequestSchema.safeParse({
         ...preview,
         categoryId: "category-expense-shopping",
@@ -321,6 +332,11 @@ describe("ledger primitive contracts", () => {
       description: "Neighbourhood market",
       direction: "OUTFLOW",
       id: "transaction-manual-1",
+      installment: {
+        count: 2,
+        groupId: "installment-group-1",
+        number: 1,
+      },
       merchantName: "Neighbourhood market",
       normalizedMerchant: "neighbourhood market",
       postedDate: "2026-07-15",
@@ -332,7 +348,20 @@ describe("ledger primitive contracts", () => {
 
     expect(
       manualTransactionCreateResponseSchema.parse({
-        data: { categoryConfirmationRequired: false, transaction },
+        data: {
+          categoryConfirmationRequired: false,
+          transaction,
+          transactions: [
+            transaction,
+            {
+              ...transaction,
+              amountMinor: 1235,
+              id: "transaction-manual-2",
+              installment: { ...transaction.installment, number: 2 },
+              postedDate: "2026-08-15",
+            },
+          ],
+        },
         meta: {},
       }),
     ).toBeDefined();
@@ -356,7 +385,7 @@ describe("ledger primitive contracts", () => {
     ).toBe(false);
   });
 
-  it("defines strict quick-entry category create and bounded suggestion contracts", () => {
+  it("defines strict quick-entry category create contracts", () => {
     expect(categoryCreateRequestSchema.parse({ kind: "EXPENSE", name: "Restaurant" })).toEqual({
       kind: "EXPENSE",
       name: "Restaurant",
@@ -383,34 +412,6 @@ describe("ledger primitive contracts", () => {
       version: 1,
     } as const;
     expect(categoryMutationResponseSchema.parse({ data: { category }, meta: {} })).toBeDefined();
-    expect(
-      categorySuggestionsResponseSchema.parse({
-        data: {
-          suggestions: [
-            { category, reason: "RECENT_MERCHANT" },
-            {
-              category: { ...category, id: "category-expense-shopping", name: "Shopping" },
-              reason: "POPULAR_EXPENSE",
-            },
-          ],
-          transactionId: "transaction-manual-1",
-        },
-        meta: {},
-      }),
-    ).toBeDefined();
-    expect(
-      categorySuggestionsResponseSchema.safeParse({
-        data: {
-          suggestions: [
-            { category, reason: "POPULAR_EXPENSE" },
-            { category: { ...category, id: "category-2" }, reason: "POPULAR_EXPENSE" },
-            { category: { ...category, id: "category-3" }, reason: "POPULAR_EXPENSE" },
-          ],
-          transactionId: "transaction-manual-1",
-        },
-        meta: {},
-      }).success,
-    ).toBe(false);
   });
 
   it("defines a strict transaction-level category override contract", () => {
@@ -422,7 +423,6 @@ describe("ledger primitive contracts", () => {
     ).toBe(false);
 
     const transaction = {
-      accountId: "account-1",
       accountLabel: null,
       amountMinor: 1234,
       reimbursementMinor: 0,
@@ -446,7 +446,7 @@ describe("ledger primitive contracts", () => {
       },
       postedDate: "2026-07-15",
       reviewReason: null,
-      source: "PLAID",
+      source: "CSV",
       status: "POSTED",
       updatedAt: "2026-07-15T13:00:00.000Z",
       version: 3,
@@ -594,12 +594,11 @@ describe("ledger primitive contracts", () => {
 
 describe("transaction read contracts", () => {
   const transaction = {
-    accountId: "account-1",
     accountLabel: null,
     amountMinor: 14327,
     reimbursementMinor: 0,
     authorizedDate: "2026-07-14",
-    categorizationSource: "PLAID",
+    categorizationSource: "RULE",
     categoryId: "category-shopping",
     categoryRuleId: null,
     createdAt: "2026-07-15T12:00:00.000Z",
@@ -618,7 +617,7 @@ describe("transaction read contracts", () => {
     },
     postedDate: "2026-07-15",
     reviewReason: null,
-    source: "PLAID",
+    source: "CSV",
     status: "POSTED",
     updatedAt: "2026-07-15T12:00:00.000Z",
     version: 1,
@@ -629,7 +628,7 @@ describe("transaction read contracts", () => {
       new URLSearchParams([
         ["accountId", "account-1"],
         ["categoryId", "category-shopping"],
-        ["categorizationSource", "PLAID"],
+        ["categorizationSource", "RULE"],
         ["currency", "CAD"],
         ["dateFrom", "2026-07-01"],
         ["dateTo", "2026-07-31"],
@@ -638,14 +637,14 @@ describe("transaction read contracts", () => {
         ["pageSize", "25"],
         ["reportMetric", "NET_SPENDING"],
         ["sort", "AMOUNT_DESC"],
-        ["source", "PLAID"],
+        ["source", "CSV"],
         ["status", "POSTED"],
       ]),
     );
 
     expect(query).toEqual({
       accountId: "account-1",
-      categorizationSource: "PLAID",
+      categorizationSource: "RULE",
       categoryId: "category-shopping",
       currency: "CAD",
       dateFrom: "2026-07-01",
@@ -655,7 +654,7 @@ describe("transaction read contracts", () => {
       pageSize: 25,
       reportMetric: "NET_SPENDING",
       sort: "AMOUNT_DESC",
-      source: "PLAID",
+      source: "CSV",
       status: "POSTED",
     });
     expect(parseTransactionListQuery(new URLSearchParams())).toEqual({
@@ -708,7 +707,7 @@ describe("transaction read contracts", () => {
         new URLSearchParams(
           "accountId=account-1&categoryId=category-food&categorizationSource=RULE&" +
             "currency=CAD&dateFrom=2026-01-01&dateTo=2026-01-31&needsReview=false&" +
-            "normalizedMerchant=fixture+cafe&reportMetric=NET_SPENDING&source=PLAID&" +
+            "normalizedMerchant=fixture+cafe&reportMetric=NET_SPENDING&source=CSV&" +
             "status=POSTED&sort=AMOUNT_ASC",
         ),
       ),
@@ -723,7 +722,7 @@ describe("transaction read contracts", () => {
       normalizedMerchant: "fixture cafe",
       reportMetric: "NET_SPENDING",
       sort: "AMOUNT_ASC",
-      source: "PLAID",
+      source: "CSV",
       status: "POSTED",
     });
     expect(parseTransactionCsvExportQuery(new URLSearchParams())).toEqual({
@@ -734,7 +733,7 @@ describe("transaction read contracts", () => {
       "cursor=eyJ2IjoxfQ",
       "pageSize=100",
       "unknown=value",
-      "source=PLAID&source=CSV",
+      "source=CSV&source=CSV",
       "merchantMissing=true&normalizedMerchant=fixture",
       "reportMetric=NET_SPENDING&status=PENDING",
     ]) {
@@ -790,5 +789,39 @@ describe("transaction read contracts", () => {
         },
       }).success,
     ).toBe(false);
+  });
+
+  it("exposes bounded installment metadata in list and detail reads", () => {
+    const installmentTransaction = {
+      ...transaction,
+      accountLabel: "RBC Credit",
+      authorizedDate: null,
+      categorizationSource: "MANUAL",
+      id: "transaction-installment-1",
+      installment: { count: 12, groupId: "installment-group-1", number: 1 },
+      source: "MANUAL",
+    } as const;
+    expect(
+      transactionListResponseSchema.parse({
+        data: { transactions: [installmentTransaction] },
+        meta: {
+          hasMore: false,
+          nextCursor: null,
+          query: { pageSize: 50, sort: "POSTED_DATE_DESC" },
+        },
+      }).data.transactions[0]?.installment,
+    ).toEqual({ count: 12, groupId: "installment-group-1", number: 1 });
+    expect(
+      transactionDetailResponseSchema.parse({
+        data: {
+          transaction: {
+            ...installmentTransaction,
+            categoryAudits: [],
+            lifecycle: { pendingTransactionId: null, replacedByTransactionId: null },
+          },
+        },
+        meta: {},
+      }).data.transaction.installment,
+    ).toEqual({ count: 12, groupId: "installment-group-1", number: 1 });
   });
 });

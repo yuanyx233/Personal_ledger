@@ -116,9 +116,15 @@ function RawDetail({ transaction }: { transaction: Transaction }) {
     ["原始描述", transaction.description],
     ["商户", displayValue(transaction.merchantName)],
     ["规范化商户", displayValue(transaction.normalizedMerchant)],
-    ["账户", transaction.accountLabel ?? transaction.accountId ?? "—"],
+    ["账户", transaction.accountLabel ?? "—"],
     ["授权日期", displayValue(transaction.authorizedDate)],
     ["入账日期", transaction.postedDate],
+    [
+      "分期",
+      transaction.installment
+        ? `第 ${transaction.installment.number}/${transaction.installment.count} 期`
+        : "—",
+    ],
     ["收款方", displayValue(transaction.paymentMetadata.payee)],
     ["付款方", displayValue(transaction.paymentMetadata.payer)],
     ["支付方式", displayValue(transaction.paymentMetadata.paymentMethod)],

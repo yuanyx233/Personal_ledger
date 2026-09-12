@@ -28,8 +28,7 @@ const PAYMENT_METADATA = {
 
 function transaction(input) {
   return {
-    accountId: "account-chequing",
-    accountLabel: null,
+    accountLabel: "Daily Chequing",
     amountMinor: 1234,
     authorizedDate: null,
     categorizationSource: "MANUAL",
@@ -45,9 +44,7 @@ function transaction(input) {
     normalizedMerchant: null,
     paymentMetadata: PAYMENT_METADATA,
     pendingTransactionId: null,
-    plaidPersonalFinanceCategory: null,
     postedDate: "2026-07-17",
-    providerTransactionId: null,
     reviewReason: null,
     source: "MANUAL",
     status: "POSTED",
@@ -81,32 +78,6 @@ function restoreFixture() {
           effectiveMonth: "2026-07",
           amountMinor: 0,
           updatedAt: NOW,
-        },
-      ],
-      accounts: [
-        {
-          connectionId: "connection-restore",
-          createdAt: NOW,
-          currency: "CAD",
-          displayName: "Daily Chequing",
-          enabled: true,
-          id: "account-chequing",
-          subtype: "CHECKING",
-          type: "DEPOSITORY",
-          updatedAt: NOW,
-          version: 1,
-        },
-        {
-          connectionId: "connection-restore",
-          createdAt: NOW,
-          currency: "CAD",
-          displayName: "Credit Card",
-          enabled: true,
-          id: "account-credit",
-          subtype: "CREDIT_CARD",
-          type: "CREDIT",
-          updatedAt: NOW,
-          version: 1,
         },
       ],
       categories: [
@@ -169,16 +140,6 @@ function restoreFixture() {
           transactionId: "transaction-expense",
         },
       ],
-      connections: [
-        {
-          createdAt: NOW,
-          id: "connection-restore",
-          institutionId: "ins_restore",
-          institutionName: "Restore Bank",
-          updatedAt: NOW,
-          version: 2,
-        },
-      ],
       importBatches: [
         {
           committedAt: NOW,
@@ -207,6 +168,9 @@ function restoreFixture() {
             merchant: null,
             postedDate: "2026-07-17",
           },
+          matchEvidence: null,
+          resolution: "IMPORTED_NEW",
+          resolvedAt: NOW,
           rowNumber: 2,
           transactionId: "transaction-transfer-right",
           validationStatus: "IMPORTED",
@@ -272,19 +236,15 @@ function restoreFixture() {
           id: "transaction-expense",
           merchantName: "Restore Cafe",
           normalizedMerchant: "restore cafe",
-          providerTransactionId: "provider-transaction-restore",
-          source: "PLAID",
         }),
         transaction({
           amountMinor: 2_000,
           categoryId: "category-system-transfer",
           direction: "OUTFLOW",
           id: "transaction-transfer-left",
-          providerTransactionId: "provider-transfer-left",
-          source: "PLAID",
         }),
         transaction({
-          accountId: "account-credit",
+          accountLabel: "Credit Card",
           amountMinor: 2_000,
           categoryId: "category-system-transfer",
           direction: "INFLOW",
@@ -293,45 +253,12 @@ function restoreFixture() {
           source: "CSV",
         }),
         transaction({
-          accountId: null,
           accountLabel: "BMO Credit",
           amountMinor: 1_149,
           id: "transaction-subscription",
           merchantName: "Apple Services",
           normalizedMerchant: "apple services",
         }),
-      ],
-      transferMatchAudits: [
-        {
-          action: "CONFIRM",
-          createdAt: NOW,
-          id: "transfer-audit-restore",
-          matchVersion: 2,
-          newStatus: "CONFIRMED",
-          oldStatus: "AUTO_CONFIRMED",
-          reason: "OWNER_CONFIRMED",
-          transferMatchId: "transfer-match-restore",
-        },
-      ],
-      transferMatches: [
-        {
-          confidence: "HIGH",
-          createdAt: NOW,
-          decisionReason: "OWNER_CONFIRMED",
-          evidence: {
-            amountMinor: 2_000,
-            currency: "CAD",
-            dayDifference: 0,
-            reason: null,
-            signals: ["DESCRIPTION"],
-          },
-          id: "transfer-match-restore",
-          leftTransactionId: "transaction-transfer-left",
-          rightTransactionId: "transaction-transfer-right",
-          status: "CONFIRMED",
-          updatedAt: NOW,
-          version: 2,
-        },
       ],
     },
     exportedAt: EXPORTED_AT,
@@ -405,8 +332,6 @@ try {
   );
   assert(output.evidence.counts.categoryAudits === 1, "Category audit count did not match.");
   assert(output.evidence.counts.merchantRules === 1, "Merchant rule count did not match.");
-  assert(output.evidence.counts.transferMatches === 1, "Transfer match count did not match.");
-  assert(output.evidence.counts.transferMatchAudits === 1, "Transfer audit count did not match.");
   assert(
     JSON.stringify(output.evidence.reportTotals) ===
       JSON.stringify([
@@ -426,23 +351,13 @@ try {
        (SELECT COUNT(*) FROM transactions) AS transaction_count,
        (SELECT COUNT(*) FROM category_audits) AS category_audit_count,
        (SELECT COUNT(*) FROM merchant_rules) AS rule_count,
-       (SELECT COUNT(*) FROM transfer_matches WHERE status = 'CONFIRMED') AS decision_count,
-       (SELECT COUNT(*) FROM transfer_match_audits) AS transfer_audit_count,
        (SELECT COUNT(*) FROM subscriptions) AS subscription_count,
        (SELECT cancellation_effective_date FROM subscriptions WHERE id = 'subscription-restore') AS subscription_cutoff,
-       (SELECT COUNT(*) FROM subscription_occurrences) AS subscription_occurrence_count,
-       (SELECT COUNT(*) FROM connections
-        WHERE status = 'DISCONNECTED' AND sync_cursor IS NULL
-          AND plaid_item_id LIKE 'restored-local-item:%'
-          AND length(access_token_ciphertext) = 1 AND length(access_token_iv) = 1) AS inert_connection_count,
-       (SELECT COUNT(*) FROM accounts
-        WHERE mask IS NULL AND plaid_account_id LIKE 'restored-local-account:%') AS restored_account_count`,
+       (SELECT COUNT(*) FROM subscription_occurrences) AS subscription_occurrence_count`,
   );
   assert(databaseEvidence.transaction_count === 5, "Independent transaction count failed.");
   assert(databaseEvidence.category_audit_count === 1, "Independent category audit link failed.");
   assert(databaseEvidence.rule_count === 1, "Independent merchant rule verification failed.");
-  assert(databaseEvidence.decision_count === 1, "Independent transfer decision failed.");
-  assert(databaseEvidence.transfer_audit_count === 1, "Independent transfer audit failed.");
   assert(databaseEvidence.subscription_count === 1, "Independent subscription count failed.");
   assert(
     databaseEvidence.subscription_cutoff === "2026-08-01",
@@ -452,8 +367,6 @@ try {
     databaseEvidence.subscription_occurrence_count === 1,
     "Independent subscription occurrence count failed.",
   );
-  assert(databaseEvidence.inert_connection_count === 1, "Restored connection was not inert.");
-  assert(databaseEvidence.restored_account_count === 2, "Restored account identity was unsafe.");
   const [deduction] = query(
     target,
     "SELECT amount_minor, reimbursement_minor FROM transactions WHERE id = 'transaction-expense'",
@@ -529,9 +442,18 @@ try {
     "Guard restore database did not reconcile.",
   );
 
-  const legacyInput = join(testRoot, "legacy-v3.json");
-  const legacyTarget = join(testRoot, "legacy-v3-restored-d1");
-  writeFileSync(legacyInput, JSON.stringify({ ...document, schemaVersion: 3 }), "utf8");
+  const legacyInput = join(testRoot, "legacy-v4.json");
+  const legacyTarget = join(testRoot, "legacy-v4-restored-d1");
+  writeFileSync(
+    legacyInput,
+    JSON.stringify({
+      ...document,
+      data: { ...document.data, connections: [], transferMatches: [] },
+      recordCounts: { ...document.recordCounts, connections: 0, transferMatches: 0 },
+      schemaVersion: 4,
+    }),
+    "utf8",
+  );
   const legacyGuarded = run(process.execPath, [
     remoteMigrationScript,
     "--input",
@@ -539,18 +461,12 @@ try {
     "--persist-to",
     legacyTarget,
   ]);
+  assert(legacyGuarded.status !== 0, "Remote migration guard accepted a pre-reduction backup.");
   assert(
-    legacyGuarded.status === 0,
-    `Remote migration guard rejected a v3 backup: ${legacyGuarded.stderr}`,
+    legacyGuarded.stderr.includes("INPUT_SCHEMA_INVALID"),
+    "Pre-reduction backup rejection was not an explicit schema error.",
   );
-  assert(
-    JSON.parse(legacyGuarded.stdout).status === "READY",
-    "Remote migration guard was not ready for a v3 backup.",
-  );
-  assert(
-    query(legacyTarget, "SELECT COUNT(*) AS count FROM transactions")[0]?.count === 5,
-    "Legacy guard restore database did not reconcile.",
-  );
+  assert(!existsSync(legacyTarget), "Rejected pre-reduction backup created a database.");
 
   const staleInput = join(testRoot, "stale.json");
   const staleTarget = join(testRoot, "stale-guard-d1");

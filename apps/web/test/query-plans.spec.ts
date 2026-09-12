@@ -21,6 +21,7 @@ const EXPECTED_INDEXES = [
   "idx_transactions_amount",
   "idx_transactions_category_date",
   "idx_transactions_filter_state_date",
+  "idx_transactions_installment_group",
   "idx_transactions_normalized_merchant_date",
   "idx_transactions_pending_link",
   "idx_transactions_report_posted_date",

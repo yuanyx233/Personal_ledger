@@ -20,11 +20,15 @@ function selectableExpenseCategories(categories: Category[]) {
 }
 
 export function NewMerchantConfirmation({
+  confirmEveryTime,
+  matchedMerchant,
   merchant,
   onCancel,
   onConfirm,
   suggestedCategory,
 }: {
+  confirmEveryTime: boolean;
+  matchedMerchant: string | null;
   merchant: string;
   onCancel: () => void;
   onConfirm: (category: Category) => Promise<void>;
@@ -110,7 +114,7 @@ export function NewMerchantConfirmation({
 
   return (
     <dialog
-      aria-labelledby="new-merchant-title"
+      aria-labelledby="merchant-confirmation-title"
       className="quick-merchant-dialog"
       onCancel={(event) => {
         event.preventDefault();
@@ -119,14 +123,20 @@ export function NewMerchantConfirmation({
       ref={dialogRef}
     >
       <section className="quick-category-confirmation">
-        <p className="quick-entry-saved">新商户 · 尚未写入</p>
-        <h2 id="new-merchant-title" ref={headingRef} tabIndex={-1}>
-          确认新商户
+        <p className="quick-entry-saved">
+          {confirmEveryTime ? "多类别商户 · 尚未写入" : "新商户 · 尚未写入"}
+        </p>
+        <h2 id="merchant-confirmation-title" ref={headingRef} tabIndex={-1}>
+          {confirmEveryTime ? "确认分类" : "确认新商户"}
         </h2>
         <p>
           <strong>{merchant}</strong> 建议归为“{suggestedCategory.name}
-          ”。确认后才会录入，并记住以后相同商户的分类。
+          ”。确认后才会录入，
+          {confirmEveryTime
+            ? "这个商户可能对应不同消费类型，每次录入前都会让你确认。"
+            : "并记住以后相同商户的分类。"}
         </p>
+        {matchedMerchant ? <p>匹配依据：北美商户知识库 · {matchedMerchant}</p> : null}
 
         {status === "loading" ? <p role="status">正在加载分类列表…</p> : null}
         {status === "error" ? (

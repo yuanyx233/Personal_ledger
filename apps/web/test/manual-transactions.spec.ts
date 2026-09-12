@@ -1,5 +1,4 @@
 import {
-  categorySuggestionsResponseSchema,
   manualTransactionCreateResponseSchema,
   manualTransactionMutationResponseSchema,
   manualTransactionPreviewResponseSchema,
@@ -99,11 +98,147 @@ beforeEach(async () => {
 });
 
 describe("protected manual transaction CRUD", () => {
+  it("creates an exact month-end installment schedule atomically", async () => {
+    const response = await createTransaction({
+      ...VALID_CREATE,
+      amount: "100.00",
+      installmentCount: 3,
+      postedDate: "2025-01-31",
+      reimbursementAmount: "66.67",
+    });
+    const body = manualTransactionCreateResponseSchema.parse(await response.json());
+
+    expect(response.status).toBe(201);
+    expect(body.data.transactions).toHaveLength(3);
+    const groupId = body.data.transactions?.[0]?.installment?.groupId;
+    expect(typeof groupId).toBe("string");
+    expect(
+      body.data.transactions?.map(
+        ({ amountMinor, installment, postedDate, reimbursementMinor }) => ({
+          amountMinor,
+          installment,
+          postedDate,
+          reimbursementMinor,
+        }),
+      ),
+    ).toEqual([
+      {
+        amountMinor: 3333,
+        installment: { count: 3, groupId, number: 1 },
+        postedDate: "2025-01-31",
+        reimbursementMinor: 2222,
+      },
+      {
+        amountMinor: 3333,
+        installment: { count: 3, groupId, number: 2 },
+        postedDate: "2025-02-28",
+        reimbursementMinor: 2222,
+      },
+      {
+        amountMinor: 3334,
+        installment: { count: 3, groupId, number: 3 },
+        postedDate: "2025-03-31",
+        reimbursementMinor: 2223,
+      },
+    ]);
+    expect(
+      new Set(body.data.transactions?.map(({ installment }) => installment?.groupId)).size,
+    ).toBe(1);
+    expect(body.data.transaction.id).toBe(body.data.transactions?.[0]?.id);
+    expect(
+      await cloudflareEnv.DB.prepare(
+        `SELECT amount_minor, posted_date, installment_number, installment_count
+         FROM transactions ORDER BY installment_number`,
+      ).all(),
+    ).toMatchObject({
+      results: [
+        {
+          amount_minor: 3333,
+          installment_count: 3,
+          installment_number: 1,
+          posted_date: "2025-01-31",
+        },
+        {
+          amount_minor: 3333,
+          installment_count: 3,
+          installment_number: 2,
+          posted_date: "2025-02-28",
+        },
+        {
+          amount_minor: 3334,
+          installment_count: 3,
+          installment_number: 3,
+          posted_date: "2025-03-31",
+        },
+      ],
+    });
+  });
+
+  it("keeps every installment reimbursement within that installment amount", async () => {
+    const response = await createTransaction({
+      ...VALID_CREATE,
+      amount: "0.06",
+      installmentCount: 3,
+      reimbursementAmount: "0.05",
+    });
+    const body = manualTransactionCreateResponseSchema.parse(await response.json());
+
+    expect(response.status).toBe(201);
+    expect(
+      body.data.transactions?.map(({ amountMinor, reimbursementMinor }) => ({
+        amountMinor,
+        reimbursementMinor,
+      })),
+    ).toEqual([
+      { amountMinor: 2, reimbursementMinor: 1 },
+      { amountMinor: 2, reimbursementMinor: 2 },
+      { amountMinor: 2, reimbursementMinor: 2 },
+    ]);
+  });
+
+  it("rejects installment counts outside the bounded integer range", async () => {
+    for (const installmentCount of [1, 61, 2.5, "3"]) {
+      expect((await createTransaction({ ...VALID_CREATE, installmentCount })).status).toBe(422);
+    }
+    expect(
+      await cloudflareEnv.DB.prepare("SELECT COUNT(*) AS total FROM transactions").first("total"),
+    ).toBe(0);
+  });
+
+  it("applies one confirmed merchant rule to every installment", async () => {
+    const response = await createTransaction({
+      ...VALID_CREATE,
+      categoryId: "category-expense",
+      description: "IKEA",
+      installmentCount: 2,
+      rememberMerchant: true,
+    });
+    const body = manualTransactionCreateResponseSchema.parse(await response.json());
+
+    expect(response.status).toBe(201);
+    expect(body.data.transactions).toHaveLength(2);
+    expect(new Set(body.data.transactions?.map(({ categoryId }) => categoryId))).toEqual(
+      new Set(["category-expense"]),
+    );
+    expect(
+      new Set(
+        (
+          await cloudflareEnv.DB.prepare(
+            "SELECT category_rule_id FROM transactions ORDER BY installment_number",
+          ).all<{ category_rule_id: string }>()
+        ).results.map(({ category_rule_id }) => category_rule_id),
+      ).size,
+    ).toBe(1);
+    expect(
+      await cloudflareEnv.DB.prepare("SELECT COUNT(*) AS total FROM merchant_rules").first("total"),
+    ).toBe(1);
+  });
+
   it("previews a new merchant without writing and confirms transaction plus rule atomically", async () => {
     await cloudflareEnv.DB.prepare(
       `INSERT INTO categories (
         id, name, kind, editable, active, created_at, updated_at, version
-      ) VALUES ('category-expense-shopping', 'Shopping', 'EXPENSE', 1, 1, ?, ?, 1)`,
+      ) VALUES ('category-expense-housing', 'Housing', 'EXPENSE', 1, 1, ?, ?, 1)`,
     )
       .bind(currentTime, currentTime)
       .run();
@@ -123,7 +258,7 @@ describe("protected manual transaction CRUD", () => {
     expect(preview.status).toBe(200);
     expect(manualTransactionPreviewResponseSchema.parse(await preview.json())).toMatchObject({
       data: {
-        category: { id: "category-expense-shopping", name: "Shopping" },
+        category: { id: "category-expense-housing", name: "Housing" },
         kind: "NEW_MERCHANT",
       },
     });
@@ -136,7 +271,7 @@ describe("protected manual transaction CRUD", () => {
 
     const confirmed = await createTransaction({
       ...previewInput,
-      categoryId: "category-expense-shopping",
+      categoryId: "category-expense-housing",
       rememberMerchant: true,
     });
     expect(confirmed.status).toBe(201);
@@ -145,7 +280,7 @@ describe("protected manual transaction CRUD", () => {
         categoryConfirmationRequired: false,
         transaction: {
           categorizationSource: "RULE",
-          categoryId: "category-expense-shopping",
+          categoryId: "category-expense-housing",
           normalizedMerchant: "ikea",
         },
       },
@@ -179,6 +314,80 @@ describe("protected manual transaction CRUD", () => {
     expect(
       await cloudflareEnv.DB.prepare("SELECT COUNT(*) AS total FROM merchant_rules").first("total"),
     ).toBe(1);
+  });
+
+  it("ignores a saved Amazon category and requires a fresh non-writing preview", async () => {
+    await cloudflareEnv.DB.batch([
+      cloudflareEnv.DB.prepare(
+        `INSERT INTO categories (
+          id, name, kind, editable, active, created_at, updated_at, version
+        ) VALUES ('category-expense-shopping', 'Shopping', 'EXPENSE', 1, 1, ?, ?, 1)`,
+      ).bind(currentTime, currentTime),
+      cloudflareEnv.DB.prepare(
+        `INSERT INTO merchant_rules (
+          id, normalized_merchant, display_merchant, category_id,
+          active, created_at, updated_at, version
+        ) VALUES ('merchant-rule-amazon', 'amazon', 'Amazon', 'category-expense', 1, ?, ?, 1)`,
+      ).bind(currentTime, currentTime),
+    ]);
+
+    const response = await worker.fetch(
+      mutationRequest("/transaction-previews", "POST", {
+        accountLabel: "RBC Credit",
+        amount: "25.00",
+        currency: "CAD",
+        description: "Amazon",
+        direction: "OUTFLOW",
+        postedDate: "2026-07-15",
+      }),
+      workerEnv,
+    );
+
+    expect(response.status).toBe(200);
+    expect(manualTransactionPreviewResponseSchema.parse(await response.json())).toMatchObject({
+      data: {
+        category: { id: "category-expense-shopping", name: "Shopping" },
+        kind: "NEW_MERCHANT",
+      },
+    });
+    expect(
+      await cloudflareEnv.DB.prepare("SELECT COUNT(*) AS total FROM transactions").first("total"),
+    ).toBe(0);
+    expect(
+      await cloudflareEnv.DB.prepare("SELECT COUNT(*) AS total FROM merchant_rules").first("total"),
+    ).toBe(1);
+  });
+
+  it("requires an explicit category for every Amazon and Costco write despite saved rules", async () => {
+    await cloudflareEnv.DB.batch(
+      [
+        ["merchant-rule-amazon", "amazon", "Amazon"],
+        ["merchant-rule-amazon-prime", "amazon prime", "Amazon Prime"],
+        ["merchant-rule-costco", "costco", "Costco"],
+      ].map(([id, normalizedMerchant, displayMerchant]) =>
+        cloudflareEnv.DB.prepare(
+          `INSERT INTO merchant_rules (
+              id, normalized_merchant, display_merchant, category_id,
+              active, created_at, updated_at, version
+            ) VALUES (?, ?, ?, 'category-expense', 1, ?, ?, 1)`,
+        ).bind(id, normalizedMerchant, displayMerchant, currentTime, currentTime),
+      ),
+    );
+
+    for (const description of ["Amazon", "Amazon.com Prime", "Costco"]) {
+      const response = await createTransaction({
+        accountLabel: "RBC Credit",
+        amount: "25.00",
+        currency: "CAD",
+        description,
+        direction: "OUTFLOW",
+        postedDate: "2026-07-15",
+      });
+      expect(response.status).toBe(409);
+    }
+    await expect(
+      cloudflareEnv.DB.prepare("SELECT COUNT(*) AS total FROM transactions").first("total"),
+    ).resolves.toBe(0);
   });
 
   it("keeps the payment and excludes reimbursement receipts without double deduction", async () => {
@@ -399,7 +608,7 @@ describe("protected manual transaction CRUD", () => {
     ).resolves.toBe(3);
   });
 
-  it("saves an unknown quick merchant once, marks it unclassified, and offers at most two suggestions", async () => {
+  it("rejects an unknown quick merchant before writing without a confirmed category", async () => {
     const response = await createTransaction({
       accountLabel: "RBC Credit",
       amount: "8.75",
@@ -408,39 +617,16 @@ describe("protected manual transaction CRUD", () => {
       direction: "OUTFLOW",
       postedDate: "2026-07-15",
     });
-    const body = manualTransactionCreateResponseSchema.parse(await response.json());
-
-    expect(response.status).toBe(201);
-    expect(body.data.categoryConfirmationRequired).toBe(true);
-    expect(body.data.transaction).toMatchObject({
-      accountLabel: "RBC Credit",
-      categorizationSource: "UNCLASSIFIED",
-      categoryId: "category-system-unclassified",
-      merchantName: "New Cafe",
-      normalizedMerchant: "new cafe",
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: "CONFLICT",
+        message: "Confirm a category for this merchant before recording the transaction.",
+      },
     });
     await expect(
-      cloudflareEnv.DB.prepare(
-        "SELECT COUNT(*) AS count FROM transactions WHERE id = ? AND needs_review = 1",
-      )
-        .bind(body.data.transaction.id)
-        .first<number>("count"),
-    ).resolves.toBe(1);
-
-    const suggestionsResponse = await worker.fetch(
-      new Request(
-        `https://ledger.example/api/v1/transactions/${body.data.transaction.id}/category-suggestions`,
-      ),
-      workerEnv,
-    );
-    const suggestions = categorySuggestionsResponseSchema.parse(await suggestionsResponse.json());
-    expect(suggestionsResponse.status).toBe(200);
-    expect(suggestions.data.transactionId).toBe(body.data.transaction.id);
-    expect(suggestions.data.suggestions.length).toBeGreaterThan(0);
-    expect(suggestions.data.suggestions.length).toBeLessThanOrEqual(2);
-    expect(suggestions.data.suggestions.every(({ category }) => category.kind === "EXPENSE")).toBe(
-      true,
-    );
+      cloudflareEnv.DB.prepare("SELECT COUNT(*) AS count FROM transactions").first<number>("count"),
+    ).resolves.toBe(0);
   });
 
   it("applies an exact learned merchant rule without asking for confirmation", async () => {

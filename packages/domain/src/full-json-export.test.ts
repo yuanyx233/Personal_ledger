@@ -4,7 +4,6 @@ import {
   FULL_JSON_EXPORT_LIMITS,
   FullJsonExportError,
   createFullJsonExport,
-  fullJsonExportV1Schema,
   fullJsonExportSchema,
   normalizeFullJsonExport,
   serializeFullJsonExport,
@@ -14,34 +13,19 @@ import { CSV_IMPORT_LIMITS } from "./csv-import";
 
 const EMPTY_DATA: FullJsonExportData = {
   budgets: [],
-  accounts: [],
   categories: [],
   categoryAudits: [],
-  connections: [],
   importBatches: [],
   importRows: [],
   merchantRules: [],
   subscriptionOccurrences: [],
   subscriptions: [],
   transactions: [],
-  transferMatchAudits: [],
-  transferMatches: [],
 };
 
 describe("versioned full JSON export", () => {
-  it("upgrades v2 backups to an empty budget collection and preserves v3 budget history", () => {
-    const current = createFullJsonExport({
-      data: EMPTY_DATA,
-      exportedAt: "2026-09-05T12:00:00.000Z",
-      timezone: "America/Toronto",
-    });
-    const { budgets, ...data } = current.data;
-    const { budgets: count, ...recordCounts } = current.recordCounts;
-    expect(budgets).toEqual([]);
-    expect(count).toBe(0);
-    expect(normalizeFullJsonExport({ ...current, data, recordCounts, schemaVersion: 2 })).toEqual(
-      current,
-    );
+  it("round-trips budget history through serialization and enforces declared counts", () => {
+    const exportedAt = "2026-09-05T12:00:00.000Z";
     const withBudget = createFullJsonExport({
       data: {
         ...EMPTY_DATA,
@@ -51,20 +35,21 @@ describe("versioned full JSON export", () => {
             currency: "CAD",
             effectiveMonth: "2026-09",
             amountMinor: 50000,
-            updatedAt: current.exportedAt,
+            updatedAt: exportedAt,
           },
           {
             categoryId: "food",
             currency: "CAD",
             effectiveMonth: "2026-10",
             amountMinor: null,
-            updatedAt: current.exportedAt,
+            updatedAt: exportedAt,
           },
         ],
       },
-      exportedAt: current.exportedAt,
-      timezone: current.timezone,
+      exportedAt,
+      timezone: "America/Toronto",
     });
+
     expect(normalizeFullJsonExport(JSON.parse(serializeFullJsonExport(withBudget)))).toEqual(
       withBudget,
     );
@@ -75,57 +60,13 @@ describe("versioned full JSON export", () => {
       }),
     ).toThrow();
   });
-  it("preserves the historical owner-confirmed credit-card payment evidence", () => {
-    const document = createFullJsonExport({
-      data: {
-        ...EMPTY_DATA,
-        transferMatches: [
-          {
-            id: "match-payment",
-            leftTransactionId: "payment-debit",
-            rightTransactionId: "payment-credit",
-            status: "CONFIRMED",
-            confidence: "HIGH",
-            decisionReason: "OWNER_CONFIRMED",
-            evidence: {
-              amountMinor: 1000,
-              currency: "CAD",
-              dayDifference: 0,
-              reason: "CREDIT_CARD_PAYMENT",
-              signals: [],
-            },
-            createdAt: "2026-09-04T12:00:00.000Z",
-            updatedAt: "2026-09-04T12:00:00.000Z",
-            version: 2,
-          },
-        ],
-      },
-      exportedAt: "2026-09-04T12:00:00.000Z",
-      timezone: "America/Toronto",
-    });
-    expect(
-      fullJsonExportSchema.parse(JSON.parse(serializeFullJsonExport(document))).data
-        .transferMatches[0]?.evidence.reason,
-    ).toBe("CREDIT_CARD_PAYMENT");
-  });
 
-  it("builds a strict v2 document with exact record counts and portable minor units", () => {
+  it("builds a strict document with exact record counts and portable minor units", () => {
     const document = createFullJsonExport({
       data: {
         ...EMPTY_DATA,
-        connections: [
-          {
-            createdAt: "2026-07-17T12:00:00.000Z",
-            id: "connection-1",
-            institutionId: "ins_1",
-            institutionName: "Fixture Bank",
-            updatedAt: "2026-07-17T12:00:00.000Z",
-            version: 2,
-          },
-        ],
         transactions: [
           {
-            accountId: null,
             accountLabel: "Cash",
             amountMinor: 1234,
             reimbursementMinor: 0,
@@ -139,6 +80,7 @@ describe("versioned full JSON export", () => {
             direction: "OUTFLOW",
             id: "transaction-1",
             importFingerprint: null,
+            installment: { count: 3, groupId: "installment-group-1", number: 1 },
             merchantName: null,
             needsReview: true,
             normalizedMerchant: null,
@@ -149,9 +91,7 @@ describe("versioned full JSON export", () => {
               referenceNumber: null,
             },
             pendingTransactionId: null,
-            plaidPersonalFinanceCategory: null,
             postedDate: "2026-07-17",
-            providerTransactionId: null,
             reviewReason: "UNCLASSIFIED_MERCHANT",
             source: "MANUAL",
             status: "POSTED",
@@ -167,50 +107,45 @@ describe("versioned full JSON export", () => {
     expect(document).toMatchObject({
       exportKind: "PERSONAL_LEDGER_FULL",
       exportedAt: "2026-07-17T12:00:00.000Z",
-      recordCounts: { connections: 1, transactions: 1 },
-      schemaVersion: 4,
+      recordCounts: { transactions: 1 },
+      schemaVersion: 5,
       timezone: "America/Toronto",
     });
-    expect(document.data.transactions[0]).toMatchObject({ amountMinor: 1234, currency: "CAD" });
+    expect(document.data.transactions[0]).toMatchObject({
+      amountMinor: 1234,
+      currency: "CAD",
+      installment: { count: 3, groupId: "installment-group-1", number: 1 },
+    });
     expect(fullJsonExportSchema.parse(document)).toEqual(document);
   });
 
-  it("normalizes a valid v1 document for restore without inventing ledger records", () => {
-    const v2 = createFullJsonExport({
+  it("carries no removed bank-synchronization record set", () => {
+    const document = createFullJsonExport({
       data: EMPTY_DATA,
       exportedAt: "2026-07-17T12:00:00.000Z",
       timezone: "America/Toronto",
     });
-    const {
-      budgets: _budgets,
-      subscriptionOccurrences: _occurrences,
-      subscriptions: _subscriptions,
-      ...data
-    } = v2.data;
-    const {
-      budgets: _budgetCount,
-      subscriptionOccurrences: _occurrenceCount,
-      subscriptions: _subscriptionCount,
-      ...recordCounts
-    } = v2.recordCounts;
-    expect(_budgets).toEqual([]);
-    expect(_budgetCount).toBe(0);
-    expect(_occurrences).toEqual([]);
-    expect(_subscriptions).toEqual([]);
-    expect(_occurrenceCount).toBe(0);
-    expect(_subscriptionCount).toBe(0);
-    const legacy = fullJsonExportV1Schema.parse({
-      ...v2,
-      data,
-      recordCounts,
-      schemaVersion: 1,
-    });
 
-    expect(normalizeFullJsonExport(legacy)).toMatchObject({
-      data: { subscriptionOccurrences: [], subscriptions: [] },
-      recordCounts: { subscriptionOccurrences: 0, subscriptions: 0 },
-      schemaVersion: 4,
+    for (const key of ["accounts", "connections", "transferMatchAudits", "transferMatches"]) {
+      expect(document.data).not.toHaveProperty(key);
+      expect(document.recordCounts).not.toHaveProperty(key);
+    }
+  });
+
+  it("rejects a pre-reduction backup instead of silently discarding its removed records", () => {
+    const document = createFullJsonExport({
+      data: EMPTY_DATA,
+      exportedAt: "2026-07-17T12:00:00.000Z",
+      timezone: "America/Toronto",
     });
+    const legacy = {
+      ...document,
+      data: { ...document.data, connections: [], transferMatches: [] },
+      recordCounts: { ...document.recordCounts, connections: 0, transferMatches: 0 },
+      schemaVersion: 4,
+    };
+
+    expect(() => normalizeFullJsonExport(legacy)).toThrow();
   });
 
   it("rejects unknown fields at every boundary and inconsistent declared counts", () => {
@@ -228,19 +163,22 @@ describe("versioned full JSON export", () => {
         ...document,
         data: {
           ...document.data,
-          connections: [
+          categories: [
             {
               accessTokenCiphertext: "ciphertext-secret",
+              active: true,
               createdAt: "2026-07-17T12:00:00.000Z",
-              id: "connection-1",
-              institutionId: "ins_1",
-              institutionName: "Fixture Bank",
+              editable: true,
+              id: "category-1",
+              kind: "EXPENSE",
+              name: "Food",
+              systemKey: null,
               updatedAt: "2026-07-17T12:00:00.000Z",
               version: 1,
             },
           ],
         },
-        recordCounts: { ...document.recordCounts, connections: 1 },
+        recordCounts: { ...document.recordCounts, categories: 1 },
       }),
     ).toThrow();
     expect(() =>
@@ -263,6 +201,7 @@ describe("versioned full JSON export", () => {
               createdAt: "2026-07-17T12:00:00.000Z",
               errors: [],
               id: "row-1",
+              matchEvidence: null,
               raw: {
                 accountLabel: "Account",
                 amount: "1.00",
@@ -273,6 +212,8 @@ describe("versioned full JSON export", () => {
                 merchant: null,
                 postedDate: "2026-07-17",
               },
+              resolution: "UNRESOLVED",
+              resolvedAt: null,
               rowNumber: 2,
               transactionId: null,
               validationStatus: "VALID",

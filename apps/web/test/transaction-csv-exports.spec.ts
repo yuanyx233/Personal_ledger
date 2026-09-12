@@ -37,8 +37,6 @@ beforeEach(async () => {
   await clearCategoryAudits(cloudflareEnv.DB);
   await cloudflareEnv.DB.batch(
     [
-      "transfer_match_audits",
-      "transfer_matches",
       "transactions",
       "merchant_rules",
       "categories WHERE system_key IS NULL",
@@ -47,25 +45,6 @@ beforeEach(async () => {
     ].map((table) => cloudflareEnv.DB.prepare(`DELETE FROM ${table}`)),
   );
   await cloudflareEnv.DB.batch([
-    cloudflareEnv.DB.prepare(
-      `INSERT INTO connections (
-        id, institution_id, institution_name, plaid_item_id,
-        access_token_ciphertext, access_token_iv, token_key_version,
-        status, created_at, updated_at, version
-      ) VALUES (
-        'connection-export', 'ins_export', 'Export Bank', 'plaid-item-export',
-        X'0102', X'0304', 1, 'HEALTHY', ?, ?, 1
-      )`,
-    ).bind(NOW, NOW),
-    cloudflareEnv.DB.prepare(
-      `INSERT INTO accounts (
-        id, connection_id, plaid_account_id, display_name, mask, type, subtype,
-        currency, enabled, created_at, updated_at, version
-      ) VALUES (
-        'account-export', 'connection-export', 'plaid-account-export',
-        '@Daily Chequing', '1234', 'DEPOSITORY', 'CHECKING', 'CAD', 1, ?, ?, 1
-      )`,
-    ).bind(NOW, NOW),
     cloudflareEnv.DB.prepare(
       `INSERT INTO categories (
         id, name, kind, editable, active, created_at, updated_at, version
@@ -85,37 +64,81 @@ beforeEach(async () => {
   await cloudflareEnv.DB.batch([
     cloudflareEnv.DB.prepare(
       `INSERT INTO transactions (
-        id, source, account_id, plaid_transaction_id, status, authorized_date,
+        id, source, account_label, import_fingerprint, status, authorized_date,
         posted_date, amount_minor, direction, currency, raw_description, merchant_name,
         category_id, categorization_source, category_rule_id, normalized_merchant,
-        plaid_pfc_primary, plaid_pfc_detailed, plaid_pfc_confidence,
         needs_review, review_reason, created_at, updated_at, version
       ) VALUES (
-        'transaction-export-match', 'PLAID', 'account-export', 'plaid-export-match',
+        'transaction-export-match', 'CSV', '@Daily Chequing', ?,
         'POSTED', '2026-07-14', '2026-07-15', 1234, 'OUTFLOW', 'CAD', ?, '+Cafe',
         'category-export', 'RULE', 'rule-export', '-fixture cafe',
-        'FOOD_AND_DRINK', 'FOOD_AND_DRINK_COFFEE', 'HIGH', 0, NULL, ?, ?, 1
+        0, NULL, ?, ?, 1
       )`,
-    ).bind('=HYPERLINK("https://evil.invalid"), "quoted"\nnext line', NOW, NOW),
+    ).bind("a".repeat(64), '=HYPERLINK("https://evil.invalid"), "quoted"\nnext line', NOW, NOW),
     cloudflareEnv.DB.prepare(
       `INSERT INTO transactions (
-        id, source, account_id, plaid_transaction_id, status, posted_date,
+        id, source, account_label, import_fingerprint, status, posted_date,
         amount_minor, direction, currency, raw_description, merchant_name,
         category_id, categorization_source, normalized_merchant,
         needs_review, review_reason, created_at, updated_at, version
       ) VALUES (
-        'transaction-export-other', 'PLAID', 'account-export', 'plaid-export-other',
+        'transaction-export-other', 'CSV', '@Daily Chequing', ?,
         'POSTED', '2026-07-16', 9999, 'OUTFLOW', 'CAD', 'Other purchase', 'Other',
-        'category-export', 'PLAID', 'other', 0, NULL, ?, ?, 1
+        'category-export', 'MANUAL', 'other', 0, NULL, ?, ?, 1
       )`,
-    ).bind(NOW, NOW),
+    ).bind("b".repeat(64), NOW, NOW),
   ]);
 });
 
 describe("filtered transaction CSV export", () => {
+  it("exports and filters a historical account-only Plaid row by its display name", async () => {
+    await cloudflareEnv.DB.batch([
+      cloudflareEnv.DB.prepare(
+        `INSERT INTO connections (
+          id, institution_id, institution_name, plaid_item_id,
+          access_token_ciphertext, access_token_iv, token_key_version,
+          status, created_at, updated_at, version
+        ) VALUES (
+          'connection-csv-legacy', 'ins_legacy', 'Legacy Bank', 'plaid-item-csv-legacy',
+          X'01', X'02', 1, 'DISCONNECTED', ?, ?, 1
+        )`,
+      ).bind(NOW, NOW),
+      cloudflareEnv.DB.prepare(
+        `INSERT INTO accounts (
+          id, connection_id, plaid_account_id, display_name,
+          type, subtype, currency, enabled, created_at, updated_at, version
+        ) VALUES (
+          'account-csv-legacy', 'connection-csv-legacy', 'plaid-account-csv-legacy',
+          'Legacy Savings', 'DEPOSITORY', 'CHECKING', 'CAD', 0, ?, ?, 1
+        )`,
+      ).bind(NOW, NOW),
+      cloudflareEnv.DB.prepare(
+        `INSERT INTO transactions (
+          id, source, account_id, plaid_transaction_id, status, posted_date,
+          amount_minor, direction, currency, raw_description, category_id,
+          categorization_source, needs_review, created_at, updated_at, version
+        ) VALUES (
+          'transaction-csv-legacy-plaid', 'PLAID', 'account-csv-legacy',
+          'plaid-transaction-csv-legacy', 'POSTED', '2026-07-13', 2500,
+          'OUTFLOW', 'CAD', 'Legacy purchase', 'category-export', 'PLAID', 0, ?, ?, 1
+        )`,
+      ).bind(NOW, NOW),
+    ]);
+
+    const response = await worker.fetch(
+      apiRequest("/exports/transactions.csv?accountId=Legacy%20Savings&source=PLAID"),
+      workerEnv,
+    );
+    const csv = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(csv).toContain("transaction-csv-legacy-plaid");
+    expect(csv).toContain("Legacy Savings");
+  });
+
   it("downloads the same filter population with stable provenance and reversible formula safety", async () => {
     const filters = new URLSearchParams({
-      accountId: "account-export",
+      accountId: "@Daily Chequing",
       categorizationSource: "RULE",
       categoryId: "category-export",
       currency: "CAD",
@@ -125,7 +148,7 @@ describe("filtered transaction CSV export", () => {
       normalizedMerchant: "-fixture cafe",
       reportMetric: "NET_SPENDING",
       sort: "AMOUNT_ASC",
-      source: "PLAID",
+      source: "CSV",
       status: "POSTED",
     });
     const listResponse = await worker.fetch(
@@ -150,9 +173,8 @@ describe("filtered transaction CSV export", () => {
     expect(csv.startsWith(`${TRANSACTION_CSV_HEADERS.join(",")}\r\n`)).toBe(true);
     expect(csv).toContain("transaction-export-match,");
     expect(csv).not.toContain("transaction-export-other");
-    expect(csv).not.toContain("plaid-export-match");
-    expect(csv).not.toContain("plaid-item-export");
-    expect(csv).toContain("RULE,rule-export,''Cafe rule,FOOD_AND_DRINK");
+    expect(csv).not.toContain("plaid");
+    expect(csv).toContain("RULE,rule-export,''Cafe rule,CSV");
 
     const preview = await parseCsvPreview({
       chunks: [new TextEncoder().encode(csv)],
@@ -188,7 +210,7 @@ describe("filtered transaction CSV export", () => {
       "pageSize=100",
       "cursor=eyJ2IjoxfQ",
       "unsafeWhere=1%3D1",
-      "source=PLAID&source=CSV",
+      "source=MANUAL&source=CSV",
       "dateFrom=2024-01-01&dateTo=2026-07-15",
     ]) {
       const response = await worker.fetch(
@@ -216,11 +238,11 @@ describe("filtered transaction CSV export", () => {
          CROSS JOIN digits AS ten_thousands
        )
        INSERT INTO transactions (
-         id, source, account_id, status, posted_date, amount_minor, direction, currency,
+         id, source, account_label, status, posted_date, amount_minor, direction, currency,
          raw_description, category_id, categorization_source, needs_review, review_reason,
          created_at, updated_at, version
        )
-       SELECT 'bulk-export-' || value, 'MANUAL', 'account-export', 'POSTED',
+       SELECT 'bulk-export-' || value, 'MANUAL', '@Daily Chequing', 'POSTED',
               '2026-07-01', 1, 'OUTFLOW', 'CAD', 'Bulk export row', 'category-export',
               'MANUAL', 0, NULL, ?, ?, 1
        FROM sequence WHERE value <= 10000`,

@@ -3,6 +3,7 @@ import {
   importedDefaultCategory,
   importedMerchantFamily,
   manualDefaultCategory,
+  merchantRequiresCategoryConfirmation,
 } from "./import-categorization";
 import { normalizeMerchantName } from "./merchant-categorization";
 
@@ -23,7 +24,7 @@ describe("CSV merchant classification", () => {
     ["UBER CANADA/UBEREATS TORONTO", "category-expense-food"],
     ["UBER CANADA/UBERTRIP TORONTO", "category-expense-transportation"],
     ["UBERDIRECTCA_PASS TORONTO", "category-expense-bills"],
-    ["WWW COSTCO CA 800-955-2292", "category-expense-shopping"],
+    ["WWW COSTCO CA 800-955-2292", "category-expense-food"],
     ["Aesop Toronto Eaton Ct Toronto", "category-expense-shopping"],
     ["SDM 2609 TORONTO", "category-expense-shopping"],
     ["SUPER VAPE 437-4997487", "category-expense-shopping"],
@@ -64,14 +65,45 @@ describe("CSV merchant classification", () => {
 
 describe("manual-entry merchant classification", () => {
   it.each([
-    ["IKEA", "category-expense-shopping"],
-    ["IKEA North York", "category-expense-shopping"],
+    ["IKEA", "category-expense-housing"],
+    ["IKEA North York", "category-expense-housing"],
     ["Amazon", "category-expense-shopping"],
     ["Amazon.ca", "category-expense-shopping"],
     ["Amazon Prime", "category-expense-bills"],
+    ["Costco Wholesale #1234", "category-expense-food"],
+    ["Costco Gas #1234", "category-expense-transportation"],
+    ["Costco Travel", "category-expense-travel"],
+    ["Costco Pharmacy", "category-expense-healthcare"],
+    ["Home Depot", "category-expense-housing"],
+    ["Wayfair Canada", "category-expense-housing"],
+    ["Whole Foods Market", "category-expense-food"],
+    ["Loblaws #123", "category-expense-food"],
+    ["Target T-1234", "category-expense-shopping"],
+    ["Netflix.com", "category-expense-entertainment"],
+    ["Air Canada", "category-expense-travel"],
   ])("suggests the intended category for %s", (merchant, categoryId) => {
     expect(manualDefaultCategory(merchant)).toBe(categoryId);
   });
+
+  it.each([
+    "Amazon",
+    "Amazon.ca*ORDER123",
+    "Amazon.com*ORDER123",
+    "Amazon Prime",
+    "Amazon.com Prime",
+    "AMZN Mktp CA*ORDER123",
+    "Costco",
+    "Costco Gas",
+  ])("requires a category confirmation every time for %s", (merchant) => {
+    expect(merchantRequiresCategoryConfirmation(merchant)).toBe(true);
+  });
+
+  it.each(["IKEA", "Walmart", "Whole Foods Market"])(
+    "does not force repeated confirmation for %s",
+    (merchant) => {
+      expect(merchantRequiresCategoryConfirmation(merchant)).toBe(false);
+    },
+  );
 
   it.each(["IKEA Museum", "Amazonian Hotel", "My Amazon Returns Help"])(
     "does not guess from a near-miss name: %s",

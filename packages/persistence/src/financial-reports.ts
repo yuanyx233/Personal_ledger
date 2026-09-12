@@ -22,7 +22,6 @@ import {
 import { calendarDateSchema, currencyCodeSchema } from "@ledger/domain/api-contracts";
 
 interface FinancialReportRow {
-  account_id: string;
   amount_minor: number;
   category_id: string | null;
   category_kind: ReportCategoryKind | null;
@@ -83,28 +82,18 @@ export class FinancialReportRepository {
     const conditions = [
       "transactions.status = 'POSTED'",
       "transactions.posted_date BETWEEN ? AND ?",
-      `NOT EXISTS (
-        SELECT 1 FROM transfer_matches AS left_match
-        WHERE left_match.status IN ('AUTO_CONFIRMED', 'CONFIRMED')
-          AND left_match.left_transaction_id = transactions.id
-      )`,
-      `NOT EXISTS (
-        SELECT 1 FROM transfer_matches AS right_match
-        WHERE right_match.status IN ('AUTO_CONFIRMED', 'CONFIRMED')
-          AND right_match.right_transaction_id = transactions.id
-      )`,
     ];
     const bindings: string[] = [period.dateFrom, period.dateTo];
     const addFilter = (condition: string, ...values: string[]) => {
       conditions.push(condition);
       bindings.push(...values);
     };
-    if (filters.accountId)
+    if (filters.accountId) {
       addFilter(
-        "(transactions.account_id = ? OR transactions.account_label = ?)",
-        filters.accountId,
+        "COALESCE(transactions.account_label, transaction_account.display_name) = ?",
         filters.accountId,
       );
+    }
     if (filters.categoryId) addFilter("transactions.category_id = ?", filters.categoryId);
     if (filters.currency) addFilter("transactions.currency = ?", filters.currency);
     if (filters.normalizedMerchant) {
@@ -116,7 +105,6 @@ export class FinancialReportRepository {
       .prepare(
         `SELECT
            transactions.id,
-           transactions.account_id,
            transactions.posted_date,
            transactions.amount_minor - transactions.reimbursement_minor AS amount_minor,
            transactions.direction,
@@ -127,6 +115,8 @@ export class FinancialReportRepository {
            categories.kind AS category_kind,
            categories.name AS category_name
          FROM transactions
+         LEFT JOIN accounts AS transaction_account
+           ON transaction_account.id = transactions.account_id
          LEFT JOIN categories ON categories.id = transactions.category_id
          WHERE ${conditions.join("\n           AND ")}
          ORDER BY transactions.posted_date, transactions.id`,
@@ -299,7 +289,6 @@ export class FinancialReportRepository {
         postedDate: row.posted_date,
         status: "POSTED" as const,
       })),
-      transferMatches: [],
     });
     return { ...report, period };
   }

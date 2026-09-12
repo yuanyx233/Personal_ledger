@@ -61,21 +61,7 @@ function periodMeta(grain: string, period: string) {
   };
 }
 
-const freshness = {
-  connections: [
-    {
-      connectionId: "connection-rbc",
-      institutionName: "RBC",
-      lastSuccessAt: "2026-07-17T10:30:00.000Z",
-      nextActionCode: "REAUTHENTICATE",
-      stale: true,
-      status: "ACTION_REQUIRED",
-    },
-  ],
-  generatedAt: "2026-07-17T12:00:00.000Z",
-  isStale: true,
-  staleAfterMinutes: 60,
-} as const;
+const freshness = { generatedAt: "2026-07-17T12:00:00.000Z" } as const;
 
 function cashFlowSection(currency: "CAD" | "USD", seed: number) {
   const current = {

@@ -55,34 +55,11 @@ beforeAll(async () => {
 beforeEach(async () => {
   await clearCategoryAudits(cloudflareEnv.DB);
   await cloudflareEnv.DB.batch(
-    [
-      "transactions",
-      "merchant_rules",
-      "categories WHERE system_key IS NULL",
-      "accounts",
-      "connections",
-    ].map((table) => cloudflareEnv.DB.prepare(`DELETE FROM ${table}`)),
+    ["transactions", "merchant_rules", "categories WHERE system_key IS NULL"].map((table) =>
+      cloudflareEnv.DB.prepare(`DELETE FROM ${table}`),
+    ),
   );
   await cloudflareEnv.DB.batch([
-    cloudflareEnv.DB.prepare(
-      `INSERT INTO connections (
-        id, institution_id, institution_name, plaid_item_id,
-        access_token_ciphertext, access_token_iv, token_key_version,
-        status, created_at, updated_at, version
-      ) VALUES (
-        'connection-1', 'ins_42', 'Fixture Bank', 'plaid-item-1',
-        X'0102', X'0304', 1, 'HEALTHY', ?, ?, 1
-      )`,
-    ).bind(NOW, NOW),
-    cloudflareEnv.DB.prepare(
-      `INSERT INTO accounts (
-        id, connection_id, plaid_account_id, display_name, type, subtype,
-        currency, enabled, created_at, updated_at, version
-      ) VALUES (
-        'account-1', 'connection-1', 'plaid-account-1', 'Daily Chequing',
-        'DEPOSITORY', 'CHECKING', 'CAD', 1, ?, ?, 1
-      )`,
-    ).bind(NOW, NOW),
     ...[
       ["category-old", "Old category", 1],
       ["category-new", "New category", 1],
@@ -107,12 +84,12 @@ beforeEach(async () => {
   await cloudflareEnv.DB.batch([
     cloudflareEnv.DB.prepare(
       `INSERT INTO transactions (
-        id, source, account_id, plaid_transaction_id, status, posted_date,
+        id, source, account_label, import_fingerprint, status, posted_date,
         amount_minor, direction, currency, raw_description, merchant_name,
         category_id, category_rule_id, categorization_source, normalized_merchant,
         needs_review, review_reason, created_at, updated_at, version
       ) VALUES (
-        'transaction-plaid-override', 'PLAID', 'account-1', 'plaid-override',
+        'transaction-rule-override', 'CSV', 'Daily Chequing', 'e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0',
         'POSTED', '2026-07-15', 1234, 'OUTFLOW', 'CAD', 'Neighbourhood market',
         'Neighbourhood Market', 'category-old', 'rule-market', 'RULE',
         'neighbourhood market', 1, 'RULE_CONFLICT', ?, ?, 1
@@ -126,7 +103,7 @@ beforeEach(async () => {
       ) VALUES (
         'transaction-csv-override', 'CSV', 'Imported account', 'csv-override',
         'POSTED', '2026-07-15', 5678, 'OUTFLOW', 'CAD', 'Imported row',
-        'category-old', 'PLAID', 0, ?, ?, 1
+        'category-old', 'MANUAL', 0, ?, ?, 1
       )`,
     ).bind(NOW, NOW),
     cloudflareEnv.DB.prepare(
@@ -144,8 +121,8 @@ beforeEach(async () => {
 });
 
 describe("transaction-level category override", () => {
-  it("corrects one Plaid transaction and appends complete old/new provenance", async () => {
-    const response = await patchCategory("transaction-plaid-override", "category-new", 1);
+  it("corrects one rule-classified transaction and appends complete old/new provenance", async () => {
+    const response = await patchCategory("transaction-rule-override", "category-new", 1);
     const body = transactionCategoryOverrideResponseSchema.parse(await response.json());
 
     expect(response.status).toBe(200);
@@ -155,14 +132,14 @@ describe("transaction-level category override", () => {
       categoryRuleId: null,
       needsReview: false,
       reviewReason: null,
-      source: "PLAID",
+      source: "CSV",
       version: 2,
     });
     await expect(
       cloudflareEnv.DB.prepare(
         `SELECT old_category_id, new_category_id, old_source, new_source,
                 old_category_rule_id, new_category_rule_id, reason
-         FROM category_audits WHERE transaction_id = 'transaction-plaid-override'`,
+         FROM category_audits WHERE transaction_id = 'transaction-rule-override'`,
       ).first(),
     ).resolves.toEqual({
       new_category_id: "category-new",
@@ -180,7 +157,7 @@ describe("transaction-level category override", () => {
     ).resolves.toEqual({ active: 1, category_id: "category-old", version: 1 });
 
     const detailResponse = await worker.fetch(
-      new Request("https://ledger.example/api/v1/transactions/transaction-plaid-override"),
+      new Request("https://ledger.example/api/v1/transactions/transaction-rule-override"),
       workerEnv,
     );
     const detail = transactionDetailResponseSchema.parse(await detailResponse.json());
@@ -212,7 +189,7 @@ describe("transaction-level category override", () => {
 
   it("allows explicit Transfer classification without a matching workflow", async () => {
     const response = await patchCategory(
-      "transaction-plaid-override",
+      "transaction-rule-override",
       "category-system-transfer",
       1,
     );
@@ -231,10 +208,10 @@ describe("transaction-level category override", () => {
        WHERE id = 'transaction-csv-override'`,
     ).run();
     const responses = await Promise.all([
-      patchCategory("transaction-plaid-override", "category-new", 2),
-      patchCategory("transaction-plaid-override", "category-inactive", 1),
-      patchCategory("transaction-plaid-override", "category-system-unclassified", 1),
-      patchCategory("transaction-plaid-override", "category-missing", 1),
+      patchCategory("transaction-rule-override", "category-new", 2),
+      patchCategory("transaction-rule-override", "category-inactive", 1),
+      patchCategory("transaction-rule-override", "category-system-unclassified", 1),
+      patchCategory("transaction-rule-override", "category-missing", 1),
       patchCategory("transaction-csv-override", "category-new", 1),
     ]);
 
@@ -247,7 +224,7 @@ describe("transaction-level category override", () => {
   });
 
   it("enforces append-only category audits", async () => {
-    await patchCategory("transaction-plaid-override", "category-new", 1);
+    await patchCategory("transaction-rule-override", "category-new", 1);
 
     await expect(
       cloudflareEnv.DB.prepare("UPDATE category_audits SET reason = 'tampered'").run(),

@@ -4,7 +4,7 @@ export type FullJsonRestoreErrorCode =
   | "DANGLING_RELATIONSHIP"
   | "DUPLICATE_ID"
   | "DUPLICATE_UNIQUE_VALUE"
-  | "INVALID_ACCOUNT_TYPE"
+  | "INVALID_INSTALLMENT_GROUP"
   | "INVALID_SOURCE_IDENTITY"
   | "INVALID_SYSTEM_CATEGORY"
   | "PENDING_RELATIONSHIP_CYCLE"
@@ -88,8 +88,6 @@ function topologicallySortedTransactions(transactions: readonly Transaction[]): 
 function validateRestoreRelationships(document: FullJsonExport): Transaction[] {
   assertUniqueIds(document);
   const data = document.data;
-  const connectionIds = new Set(data.connections.map(({ id }) => id));
-  const accountIds = new Set(data.accounts.map(({ id }) => id));
   const categoryIds = new Set(data.categories.map(({ id }) => id));
   for (const budget of data.budgets) {
     assertReference(categoryIds, budget.categoryId);
@@ -99,7 +97,6 @@ function validateRestoreRelationships(document: FullJsonExport): Transaction[] {
   }
   const ruleIds = new Set(data.merchantRules.map(({ id }) => id));
   const transactionIds = new Set(data.transactions.map(({ id }) => id));
-  const transferMatchIds = new Set(data.transferMatches.map(({ id }) => id));
   const importBatchIds = new Set(data.importBatches.map(({ id }) => id));
   const subscriptionIds = new Set(data.subscriptions.map(({ id }) => id));
 
@@ -113,12 +110,6 @@ function validateRestoreRelationships(document: FullJsonExport): Transaction[] {
   );
   assertUnique(
     data.merchantRules.map(({ normalizedMerchant }) => normalizedMerchant),
-    "DUPLICATE_UNIQUE_VALUE",
-  );
-  assertUnique(
-    data.transactions.flatMap(({ providerTransactionId }) =>
-      providerTransactionId === null ? [] : [providerTransactionId],
-    ),
     "DUPLICATE_UNIQUE_VALUE",
   );
   assertUnique(
@@ -153,13 +144,6 @@ function validateRestoreRelationships(document: FullJsonExport): Transaction[] {
     ),
     "DUPLICATE_UNIQUE_VALUE",
   );
-  assertUnique(
-    data.transferMatches.map(
-      ({ leftTransactionId, rightTransactionId }) =>
-        `${leftTransactionId}\u0000${rightTransactionId}`,
-    ),
-    "DUPLICATE_UNIQUE_VALUE",
-  );
 
   const systemCategories = data.categories.filter(({ systemKey }) => systemKey !== null);
   if (
@@ -181,16 +165,6 @@ function validateRestoreRelationships(document: FullJsonExport): Transaction[] {
     throw new FullJsonRestoreError("INVALID_SYSTEM_CATEGORY");
   }
 
-  for (const account of data.accounts) {
-    assertReference(connectionIds, account.connectionId);
-    if (!(
-      (account.type === "DEPOSITORY" && account.subtype === "CHECKING") ||
-      (account.type === "CREDIT" && account.subtype === "CREDIT_CARD")
-    )) {
-      throw new FullJsonRestoreError("INVALID_ACCOUNT_TYPE");
-    }
-  }
-
   const rules = new Map(data.merchantRules.map((rule) => [rule.id, rule]));
   for (const rule of data.merchantRules) assertReference(categoryIds, rule.categoryId);
   for (const subscription of data.subscriptions) {
@@ -201,17 +175,13 @@ function validateRestoreRelationships(document: FullJsonExport): Transaction[] {
     }
   }
   for (const transaction of data.transactions) {
-    assertReference(accountIds, transaction.accountId);
     assertReference(categoryIds, transaction.categoryId);
     assertReference(ruleIds, transaction.categoryRuleId);
     assertReference(transactionIds, transaction.pendingTransactionId);
-    if (transaction.accountId === null && transaction.accountLabel === null) {
+    if (transaction.accountLabel === null) {
       throw new FullJsonRestoreError("DANGLING_RELATIONSHIP");
     }
-    if (
-      (transaction.source === "PLAID" && transaction.providerTransactionId === null) ||
-      (transaction.source === "CSV" && transaction.importFingerprint === null)
-    ) {
+    if (transaction.source === "CSV" && transaction.importFingerprint === null) {
       throw new FullJsonRestoreError("INVALID_SOURCE_IDENTITY");
     }
     if (
@@ -222,22 +192,31 @@ function validateRestoreRelationships(document: FullJsonExport): Transaction[] {
       throw new FullJsonRestoreError("DANGLING_RELATIONSHIP");
     }
   }
+  const installmentGroups = new Map<string, { count: number; numbers: Set<number> }>();
+  for (const transaction of data.transactions) {
+    if (transaction.installment === null) continue;
+    const { count, groupId, number } = transaction.installment;
+    const group = installmentGroups.get(groupId) ?? { count, numbers: new Set<number>() };
+    if (group.count !== count || group.numbers.has(number)) {
+      throw new FullJsonRestoreError("INVALID_INSTALLMENT_GROUP");
+    }
+    group.numbers.add(number);
+    installmentGroups.set(groupId, group);
+  }
+  for (const { count, numbers } of installmentGroups.values()) {
+    if (
+      numbers.size !== count ||
+      Array.from({ length: count }, (_, index) => index + 1).some((number) => !numbers.has(number))
+    ) {
+      throw new FullJsonRestoreError("INVALID_INSTALLMENT_GROUP");
+    }
+  }
   for (const audit of data.categoryAudits) {
     assertReference(transactionIds, audit.transactionId);
     assertReference(categoryIds, audit.oldCategoryId);
     assertReference(categoryIds, audit.newCategoryId);
     assertReference(ruleIds, audit.oldCategoryRuleId);
     assertReference(ruleIds, audit.newCategoryRuleId);
-  }
-  for (const match of data.transferMatches) {
-    assertReference(transactionIds, match.leftTransactionId);
-    assertReference(transactionIds, match.rightTransactionId);
-    if (match.leftTransactionId >= match.rightTransactionId) {
-      throw new FullJsonRestoreError("DANGLING_RELATIONSHIP");
-    }
-  }
-  for (const audit of data.transferMatchAudits) {
-    assertReference(transferMatchIds, audit.transferMatchId);
   }
   for (const row of data.importRows) {
     assertReference(importBatchIds, row.batchId);
@@ -319,84 +298,6 @@ export function createFullJsonRestoreSql(value: unknown): string {
     "DELETE FROM categories WHERE system_key IS NULL",
   ];
 
-  for (const connection of data.connections) {
-    statements.push(
-      statement(
-        "connections",
-        [
-          "id",
-          "institution_id",
-          "institution_name",
-          "plaid_item_id",
-          "access_token_ciphertext",
-          "access_token_iv",
-          "token_key_version",
-          "sync_cursor",
-          "status",
-          "last_success_at",
-          "last_error_code",
-          "consent_expires_at",
-          "created_at",
-          "updated_at",
-          "version",
-          "creation_idempotency_key",
-        ],
-        [
-          text(connection.id),
-          text(connection.institutionId),
-          text(connection.institutionName),
-          `'restored-local-item:' || ${text(connection.id)}`,
-          "X'00'",
-          "X'00'",
-          "1",
-          "NULL",
-          "'DISCONNECTED'",
-          "NULL",
-          "NULL",
-          "NULL",
-          text(connection.createdAt),
-          text(connection.updatedAt),
-          String(connection.version),
-          "NULL",
-        ],
-      ),
-    );
-  }
-  for (const account of data.accounts) {
-    statements.push(
-      statement(
-        "accounts",
-        [
-          "id",
-          "connection_id",
-          "plaid_account_id",
-          "display_name",
-          "mask",
-          "type",
-          "subtype",
-          "currency",
-          "enabled",
-          "created_at",
-          "updated_at",
-          "version",
-        ],
-        [
-          text(account.id),
-          text(account.connectionId),
-          `'restored-local-account:' || ${text(account.id)}`,
-          text(account.displayName),
-          "NULL",
-          text(account.type),
-          text(account.subtype),
-          text(account.currency),
-          bool(account.enabled),
-          text(account.createdAt),
-          text(account.updatedAt),
-          String(account.version),
-        ],
-      ),
-    );
-  }
   for (const category of data.categories.filter(({ systemKey }) => systemKey === null)) {
     statements.push(
       statement(
@@ -520,9 +421,8 @@ export function createFullJsonRestoreSql(value: unknown): string {
         [
           "id",
           "source",
-          "account_id",
-          "account_label",
           "plaid_transaction_id",
+          "account_label",
           "pending_transaction_id",
           "import_fingerprint",
           "status",
@@ -545,16 +445,15 @@ export function createFullJsonRestoreSql(value: unknown): string {
           "updated_at",
           "version",
           "normalized_merchant",
-          "plaid_pfc_primary",
-          "plaid_pfc_detailed",
-          "plaid_pfc_confidence",
+          "installment_group_id",
+          "installment_number",
+          "installment_count",
         ],
         [
           text(transaction.id),
           text(transaction.source),
-          nullableText(transaction.accountId),
+          transaction.source === "PLAID" ? text(`restored:${transaction.id}`) : "NULL",
           nullableText(transaction.accountLabel),
-          nullableText(transaction.providerTransactionId),
           nullableText(transaction.pendingTransactionId),
           nullableText(transaction.importFingerprint),
           text(transaction.status),
@@ -577,9 +476,9 @@ export function createFullJsonRestoreSql(value: unknown): string {
           text(transaction.updatedAt),
           String(transaction.version),
           nullableText(transaction.normalizedMerchant),
-          nullableText(transaction.plaidPersonalFinanceCategory?.primary ?? null),
-          nullableText(transaction.plaidPersonalFinanceCategory?.detailed ?? null),
-          nullableText(transaction.plaidPersonalFinanceCategory?.confidenceLevel ?? null),
+          nullableText(transaction.installment?.groupId ?? null),
+          transaction.installment ? String(transaction.installment.number) : "NULL",
+          transaction.installment ? String(transaction.installment.count) : "NULL",
         ],
       ),
     );
@@ -640,64 +539,6 @@ export function createFullJsonRestoreSql(value: unknown): string {
           text(audit.createdAt),
           nullableText(audit.oldCategoryRuleId),
           nullableText(audit.newCategoryRuleId),
-        ],
-      ),
-    );
-  }
-  for (const match of data.transferMatches) {
-    statements.push(
-      statement(
-        "transfer_matches",
-        [
-          "id",
-          "left_transaction_id",
-          "right_transaction_id",
-          "status",
-          "confidence",
-          "evidence_json",
-          "decision_reason",
-          "created_at",
-          "updated_at",
-          "version",
-        ],
-        [
-          text(match.id),
-          text(match.leftTransactionId),
-          text(match.rightTransactionId),
-          text(match.status),
-          text(match.confidence),
-          json(match.evidence),
-          nullableText(match.decisionReason),
-          text(match.createdAt),
-          text(match.updatedAt),
-          String(match.version),
-        ],
-      ),
-    );
-  }
-  for (const audit of data.transferMatchAudits) {
-    statements.push(
-      statement(
-        "transfer_match_audits",
-        [
-          "id",
-          "transfer_match_id",
-          "action",
-          "old_status",
-          "new_status",
-          "reason",
-          "match_version",
-          "created_at",
-        ],
-        [
-          text(audit.id),
-          text(audit.transferMatchId),
-          text(audit.action),
-          text(audit.oldStatus),
-          text(audit.newStatus),
-          text(audit.reason),
-          String(audit.matchVersion),
-          text(audit.createdAt),
         ],
       ),
     );
@@ -774,17 +615,9 @@ export function calculateFullJsonRestoreEvidence(value: unknown): FullJsonRestor
   const document = parseRestoreDocument(value);
   validateRestoreRelationships(document);
   const categories = new Map(document.data.categories.map((category) => [category.id, category]));
-  const excludedTransactionIds = new Set(
-    document.data.transferMatches
-      .filter(({ status }) => status === "AUTO_CONFIRMED" || status === "CONFIRMED")
-      .flatMap(({ leftTransactionId, rightTransactionId }) => [
-        leftTransactionId,
-        rightTransactionId,
-      ]),
-  );
   const totals = new Map<string, { incomeMinor: number; netSpendingMinor: number }>();
   for (const transaction of document.data.transactions) {
-    if (transaction.status !== "POSTED" || excludedTransactionIds.has(transaction.id)) continue;
+    if (transaction.status !== "POSTED") continue;
     const kind =
       transaction.categoryId === null ? undefined : categories.get(transaction.categoryId)?.kind;
     if (kind !== "INCOME" && kind !== "EXPENSE") continue;

@@ -387,18 +387,11 @@ export interface CashFlowTransactionInput {
   status: "PENDING" | "POSTED" | "REMOVED";
 }
 
-export interface CashFlowTransferMatchInput {
-  leftTransactionId: string;
-  rightTransactionId: string;
-  status: "AUTO_CONFIRMED" | "BROKEN" | "CONFIRMED" | "IGNORED" | "PENDING_REVIEW";
-}
-
 export interface CalculateCashFlowInput {
   categories: CashFlowCategoryInput[];
   dateFrom: string;
   dateTo: string;
   transactions: CashFlowTransactionInput[];
-  transferMatches: CashFlowTransferMatchInput[];
 }
 
 export interface CashFlowCurrencyResult {
@@ -583,20 +576,11 @@ export function calculateCashFlowReport(input: CalculateCashFlowInput): CashFlow
   if (dateFrom > dateTo) throw new RangeError("dateFrom must not be after dateTo.");
 
   const categoryKinds = new Map(input.categories.map((category) => [category.id, category.kind]));
-  const confirmedInternalTransactionIds = new Set<string>();
-  for (const match of input.transferMatches) {
-    if (match.status === "AUTO_CONFIRMED" || match.status === "CONFIRMED") {
-      confirmedInternalTransactionIds.add(match.leftTransactionId);
-      confirmedInternalTransactionIds.add(match.rightTransactionId);
-    }
-  }
-
   const eligibleTransactions = input.transactions.filter(
     (transaction) =>
       transaction.status === "POSTED" &&
       transaction.postedDate >= dateFrom &&
-      transaction.postedDate <= dateTo &&
-      !confirmedInternalTransactionIds.has(transaction.id),
+      transaction.postedDate <= dateTo,
   );
   const currencies = new Map<string, CashFlowCurrencyResult>();
   for (const transaction of eligibleTransactions) {

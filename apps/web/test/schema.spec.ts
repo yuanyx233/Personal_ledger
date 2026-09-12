@@ -195,6 +195,9 @@ const EXPECTED_COLUMNS = {
     "plaid_pfc_detailed",
     "plaid_pfc_confidence",
     "reimbursement_minor",
+    "installment_group_id",
+    "installment_number",
+    "installment_count",
   ],
   transfer_matches: [
     "id",
@@ -461,6 +464,39 @@ describe("initial D1 schema", () => {
       env.DB.prepare("UPDATE transactions SET normalized_merchant = ? WHERE id = 'pending-1'")
         .bind("x".repeat(257))
         .run(),
+    ).rejects.toThrow();
+  });
+
+  it("accepts only complete, bounded installment metadata on manual transactions", async () => {
+    await seedLedgerGraph();
+
+    const insertManualInstallment = (id: string, metadata: readonly unknown[]) =>
+      env.DB.prepare(
+        `INSERT INTO transactions (
+          id, source, account_label, status, posted_date, amount_minor, direction, currency,
+          raw_description, category_id, categorization_source, needs_review,
+          installment_group_id, installment_number, installment_count,
+          created_at, updated_at, version
+        ) VALUES (?, 'MANUAL', 'RBC Credit', 'POSTED', '2026-01-31', 3333, 'OUTFLOW',
+          'CAD', 'Laptop', 'category-1', 'MANUAL', 0, ?, ?, ?, ?, ?, 1)`,
+      )
+        .bind(id, ...metadata, "2026-01-15T12:00:00.000Z", "2026-01-15T12:00:00.000Z")
+        .run();
+
+    await expect(
+      insertManualInstallment("transaction-installment-1", ["installment-group-1", 1, 3]),
+    ).resolves.toBeDefined();
+    await expect(
+      insertManualInstallment("transaction-installment-duplicate", ["installment-group-1", 1, 3]),
+    ).rejects.toThrow();
+    await expect(
+      insertManualInstallment("transaction-installment-partial", ["installment-group-1", 2, null]),
+    ).rejects.toThrow();
+    await expect(
+      insertManualInstallment("transaction-installment-zero", ["installment-group-1", 0, 3]),
+    ).rejects.toThrow();
+    await expect(
+      insertManualInstallment("transaction-installment-overflow", ["installment-group-1", 4, 3]),
     ).rejects.toThrow();
   });
 

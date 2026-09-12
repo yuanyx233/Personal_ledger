@@ -28,33 +28,32 @@ function readRequest(pathAndQuery: string): Request {
   return new Request(`https://ledger.example/api/v1${pathAndQuery}`);
 }
 
-function insertPlaidTransaction(input: {
+function insertImportedTransaction(input: {
   amountMinor: number;
   date: string;
   id: string;
   needsReview?: boolean;
   pendingTransactionId?: string;
-  plaidTransactionId: string;
+  importFingerprint: string;
   status?: "PENDING" | "POSTED";
 }) {
   return cloudflareEnv.DB.prepare(
     `INSERT INTO transactions (
-      id, source, account_id, plaid_transaction_id, pending_transaction_id,
-      status, authorized_date, posted_date, amount_minor, direction, currency,
+      id, source, account_label, import_fingerprint, pending_transaction_id,
+      status, posted_date, amount_minor, direction, currency,
       raw_description, merchant_name, payment_metadata_json, category_id,
       categorization_source, needs_review, review_reason, created_at, updated_at, version
     ) VALUES (
-      ?, 'PLAID', 'account-1', ?, ?, ?, ?, ?, ?, 'OUTFLOW', 'CAD',
+      ?, 'CSV', 'Daily Chequing', ?, ?, ?, ?, ?, 'OUTFLOW', 'CAD',
       'AMZN Mktp CA', 'Amazon',
       '{"payee":null,"payer":"","paymentMethod":null,"reason":"must not leak","referenceNumber":null}',
-      'category-expense', 'PLAID', ?, ?, ?, ?, 1
+      'category-expense', 'RULE', ?, ?, ?, ?, 1
     )`,
   ).bind(
     input.id,
-    input.plaidTransactionId,
+    input.importFingerprint,
     input.pendingTransactionId ?? null,
     input.status ?? "POSTED",
-    input.date,
     input.date,
     input.amountMinor,
     input.needsReview ? 1 : 0,
@@ -83,54 +82,95 @@ beforeEach(async () => {
   );
   await cloudflareEnv.DB.batch([
     cloudflareEnv.DB.prepare(
-      `INSERT INTO connections (
-        id, institution_id, institution_name, plaid_item_id,
-        access_token_ciphertext, access_token_iv, token_key_version,
-        status, created_at, updated_at, version
-      ) VALUES (
-        'connection-1', 'ins_42', 'Fixture Bank', 'plaid-item-1',
-        X'0102', X'0304', 1, 'HEALTHY', ?, ?, 1
-      )`,
-    ).bind(NOW, NOW),
-    cloudflareEnv.DB.prepare(
-      `INSERT INTO accounts (
-        id, connection_id, plaid_account_id, display_name, mask, type, subtype,
-        currency, enabled, created_at, updated_at, version
-      ) VALUES (
-        'account-1', 'connection-1', 'plaid-account-1', 'Daily Chequing', '1234',
-        'DEPOSITORY', 'CHECKING', 'CAD', 1, ?, ?, 1
-      )`,
-    ).bind(NOW, NOW),
-    cloudflareEnv.DB.prepare(
       `INSERT INTO categories (
         id, name, kind, editable, active, created_at, updated_at, version
       ) VALUES ('category-expense', 'Shopping', 'EXPENSE', 1, 1, ?, ?, 1)`,
     ).bind(NOW, NOW),
   ]);
   await cloudflareEnv.DB.batch([
-    insertPlaidTransaction({
+    insertImportedTransaction({
       amountMinor: 100,
       date: "2026-07-15",
       id: "transaction-read-1",
       needsReview: true,
-      plaidTransactionId: "plaid-read-1",
+      importFingerprint: "1".repeat(64),
     }),
-    insertPlaidTransaction({
+    insertImportedTransaction({
       amountMinor: 200,
       date: "2026-07-16",
       id: "transaction-read-2",
-      plaidTransactionId: "plaid-read-2",
+      importFingerprint: "2".repeat(64),
     }),
-    insertPlaidTransaction({
+    insertImportedTransaction({
       amountMinor: 300,
       date: "2026-07-17",
       id: "transaction-read-3",
-      plaidTransactionId: "plaid-read-3",
+      importFingerprint: "3".repeat(64),
     }),
   ]);
 });
 
 describe("protected transaction read API", () => {
+  it("keeps historical Plaid transactions readable without restoring bank sync", async () => {
+    await cloudflareEnv.DB.batch([
+      cloudflareEnv.DB.prepare(
+        `INSERT INTO connections (
+          id, institution_id, institution_name, plaid_item_id,
+          access_token_ciphertext, access_token_iv, token_key_version,
+          status, created_at, updated_at, version
+        ) VALUES (
+          'connection-legacy', 'ins_legacy', 'Legacy Bank', 'plaid-item-legacy',
+          X'01', X'02', 1, 'DISCONNECTED', ?, ?, 1
+        )`,
+      ).bind(NOW, NOW),
+      cloudflareEnv.DB.prepare(
+        `INSERT INTO accounts (
+          id, connection_id, plaid_account_id, display_name,
+          type, subtype, currency, enabled, created_at, updated_at, version
+        ) VALUES (
+          'account-legacy', 'connection-legacy', 'plaid-account-legacy', 'Legacy Bank',
+          'DEPOSITORY', 'CHECKING', 'CAD', 0, ?, ?, 1
+        )`,
+      ).bind(NOW, NOW),
+      cloudflareEnv.DB.prepare(
+        `INSERT INTO transactions (
+        id, source, account_id, account_label, plaid_transaction_id, status, posted_date,
+        amount_minor, direction, currency, raw_description, category_id,
+        categorization_source, needs_review, created_at, updated_at, version
+      ) VALUES (
+        'transaction-legacy-plaid', 'PLAID', 'account-legacy', NULL, 'legacy-plaid-1', 'POSTED',
+        '2026-07-14', 4500, 'OUTFLOW', 'CAD', 'Legacy merchant',
+        'category-expense', 'PLAID', 0, ?, ?, 1
+      )`,
+      ).bind(NOW, NOW),
+    ]);
+
+    const response = await worker.fetch(readRequest("/transactions?source=PLAID"), workerEnv);
+    expect(response.status).toBe(200);
+    const body = transactionListResponseSchema.parse(await response.json());
+    expect(body.data.transactions).toEqual([
+      expect.objectContaining({
+        accountLabel: "Legacy Bank",
+        categorizationSource: "PLAID",
+        id: "transaction-legacy-plaid",
+        source: "PLAID",
+      }),
+    ]);
+    const accounts = accountOptionsResponseSchema.parse(
+      await (await worker.fetch(readRequest("/accounts"), workerEnv)).json(),
+    );
+    expect(accounts.data.accounts).toContainEqual({
+      id: "Legacy Bank",
+      displayName: "Legacy Bank",
+    });
+    const filtered = transactionListResponseSchema.parse(
+      await (
+        await worker.fetch(readRequest("/transactions?accountId=Legacy%20Bank"), workerEnv)
+      ).json(),
+    );
+    expect(filtered.data.transactions.map(({ id }) => id)).toContain("transaction-legacy-plaid");
+  });
+
   it("lists saved account labels without a bank connection and filters by them", async () => {
     await cloudflareEnv.DB.prepare(
       "UPDATE transactions SET account_label = 'Cash wallet' WHERE id = 'transaction-read-1'",
@@ -139,7 +179,7 @@ describe("protected transaction read API", () => {
     expect(response.status).toBe(200);
     const options = accountOptionsResponseSchema.parse(await response.json());
     expect(options.data.accounts).toContainEqual({ id: "Cash wallet", displayName: "Cash wallet" });
-    expect(options.data.accounts.some(({ id }) => id === "account-1")).toBe(true);
+    expect(options.data.accounts.some(({ id }) => id === "Daily Chequing")).toBe(true);
     const filtered = await worker.fetch(
       readRequest("/transactions?accountId=Cash%20wallet"),
       workerEnv,
@@ -152,7 +192,7 @@ describe("protected transaction read API", () => {
   });
   it("filters from URL parameters and traverses stable opaque cursor pages without duplicates", async () => {
     const firstUrl =
-      "/transactions?dateFrom=2026-07-01&dateTo=2026-07-31&pageSize=2&sort=POSTED_DATE_DESC&source=PLAID&status=POSTED";
+      "/transactions?dateFrom=2026-07-01&dateTo=2026-07-31&pageSize=2&sort=POSTED_DATE_DESC&source=CSV&status=POSTED";
     const firstResponse = await worker.fetch(readRequest(firstUrl), workerEnv);
     const first = transactionListResponseSchema.parse(await firstResponse.json());
 
@@ -168,7 +208,7 @@ describe("protected transaction read API", () => {
         dateTo: "2026-07-31",
         pageSize: 2,
         sort: "POSTED_DATE_DESC",
-        source: "PLAID",
+        source: "CSV",
         status: "POSTED",
       },
     });
@@ -186,7 +226,7 @@ describe("protected transaction read API", () => {
 
     const filteredResponse = await worker.fetch(
       readRequest(
-        "/transactions?accountId=account-1&categoryId=category-expense&categorizationSource=PLAID&currency=CAD&dateFrom=2026-07-01&dateTo=2026-07-31&needsReview=true&pageSize=10&sort=AMOUNT_ASC&source=PLAID&status=POSTED",
+        "/transactions?accountId=Daily%20Chequing&categoryId=category-expense&categorizationSource=RULE&currency=CAD&dateFrom=2026-07-01&dateTo=2026-07-31&needsReview=true&pageSize=10&sort=AMOUNT_ASC&source=CSV&status=POSTED",
       ),
       workerEnv,
     );
@@ -194,7 +234,7 @@ describe("protected transaction read API", () => {
     expect(filtered.data.transactions.map(({ id }) => id)).toEqual(["transaction-read-1"]);
   });
 
-  it("enumerates owner-rule and Plaid-automatic merchants through separate source filters", async () => {
+  it("enumerates owner-rule and manual merchants through separate source filters", async () => {
     await cloudflareEnv.DB.prepare(
       `INSERT INTO merchant_rules (
         id, normalized_merchant, display_merchant, category_id, active,
@@ -216,15 +256,15 @@ describe("protected transaction read API", () => {
       ),
       cloudflareEnv.DB.prepare(
         `UPDATE transactions
-         SET merchant_name = 'Plaid Cafe', normalized_merchant = 'plaid cafe',
-             categorization_source = 'PLAID', category_rule_id = NULL,
+         SET merchant_name = 'Auto Cafe', normalized_merchant = 'auto cafe',
+             categorization_source = 'MANUAL', category_rule_id = NULL,
              needs_review = 0, review_reason = NULL
          WHERE id = 'transaction-read-2'`,
       ),
       cloudflareEnv.DB.prepare(
         `UPDATE transactions
          SET merchant_name = 'Owner Corrected', normalized_merchant = 'owner corrected',
-             categorization_source = 'MANUAL', category_rule_id = NULL,
+             categorization_source = 'UNCLASSIFIED', category_rule_id = NULL,
              needs_review = 0, review_reason = NULL
          WHERE id = 'transaction-read-1'`,
       ),
@@ -258,14 +298,14 @@ describe("protected transaction read API", () => {
       pageSize: 10,
     });
 
-    const plaidResponse = await worker.fetch(
-      readRequest("/transactions?categorizationSource=PLAID&pageSize=10"),
+    const autoResponse = await worker.fetch(
+      readRequest("/transactions?categorizationSource=MANUAL&pageSize=10"),
       workerEnv,
     );
-    const plaidTransactions = transactionListResponseSchema.parse(await plaidResponse.json());
-    expect(plaidResponse.status).toBe(200);
+    const autoTransactions = transactionListResponseSchema.parse(await autoResponse.json());
+    expect(autoResponse.status).toBe(200);
     expect(
-      plaidTransactions.data.transactions.map(
+      autoTransactions.data.transactions.map(
         ({ categoryRuleId, id, merchantName, normalizedMerchant }) => ({
           categoryRuleId,
           id,
@@ -277,12 +317,12 @@ describe("protected transaction read API", () => {
       {
         categoryRuleId: null,
         id: "transaction-read-2",
-        merchantName: "Plaid Cafe",
-        normalizedMerchant: "plaid cafe",
+        merchantName: "Auto Cafe",
+        normalizedMerchant: "auto cafe",
       },
     ]);
-    expect(plaidTransactions.meta.query).toMatchObject({
-      categorizationSource: "PLAID",
+    expect(autoTransactions.meta.query).toMatchObject({
+      categorizationSource: "MANUAL",
       pageSize: 10,
     });
 
@@ -295,19 +335,19 @@ describe("protected transaction read API", () => {
 
   it("returns raw fields, lifecycle, transfer decision, and category audit in detail", async () => {
     await cloudflareEnv.DB.batch([
-      insertPlaidTransaction({
+      insertImportedTransaction({
         amountMinor: 14327,
         date: "2026-07-18",
         id: "transaction-detail-pending",
-        plaidTransactionId: "plaid-detail-pending",
+        importFingerprint: "4".repeat(64),
         status: "PENDING",
       }),
-      insertPlaidTransaction({
+      insertImportedTransaction({
         amountMinor: 14327,
         date: "2026-07-19",
         id: "transaction-detail-posted",
         pendingTransactionId: "transaction-detail-pending",
-        plaidTransactionId: "plaid-detail-posted",
+        importFingerprint: "5".repeat(64),
       }),
     ]);
     await cloudflareEnv.DB.batch([

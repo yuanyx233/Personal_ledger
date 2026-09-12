@@ -295,7 +295,9 @@ main:focus {
 }
 
 .reimbursement-fields,
-.reimbursement-controls {
+.reimbursement-controls,
+.installment-fields,
+.installment-controls {
   display: grid;
   gap: 0.75rem;
   min-width: 0;
@@ -310,6 +312,30 @@ main:focus {
 .reimbursement-fields label {
   display: grid;
   gap: 0.5rem;
+}
+
+.installment-fields label {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.installment-fields .installment-toggle {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 0.75rem;
+  cursor: pointer;
+}
+
+.installment-fields .installment-toggle input {
+  width: 1.125rem;
+  min-height: 1.125rem;
+  height: 1.125rem;
+  margin: 0;
+}
+
+.installment-controls p {
+  margin: 0;
 }
 
 .reimbursement-fields .reimbursement-toggle {
@@ -482,13 +508,6 @@ main:focus {
   line-height: 1.65;
 }
 
-.quick-category-suggestions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.75rem;
-  margin-top: 1.5rem;
-}
-
 .quick-category-select {
   display: grid;
   gap: 0.5rem;
@@ -510,11 +529,9 @@ main:focus {
   font-size: 1rem;
 }
 
-.quick-category-suggestions button,
 .quick-category-other,
 .quick-category-search button,
 .quick-category-error button,
-.quick-category-defer,
 .quick-category-create-confirm button:not(.primary-action) {
   min-height: 2.75rem;
   padding: 0.625rem 0.875rem;
@@ -528,23 +545,14 @@ main:focus {
   cursor: pointer;
 }
 
-.quick-category-suggestions button {
-  min-height: 3.5rem;
-  border-color: var(--forest);
-  text-align: left;
-}
-
-.quick-category-suggestions button:disabled,
 .quick-category-other:disabled,
 .quick-category-search button:disabled,
-.quick-category-defer:disabled,
 .quick-category-create-confirm button:disabled {
   cursor: wait;
   opacity: 0.55;
 }
 
-.quick-category-other,
-.quick-category-defer {
+.quick-category-other {
   margin-top: 0.75rem;
   background: transparent;
 }
@@ -682,16 +690,6 @@ main:focus {
   font-size: clamp(1.25rem, 3vw, 1.5rem);
   font-weight: 500;
   letter-spacing: -0.015em;
-}
-
-.stale-badge {
-  padding: 0.375rem 0.625rem;
-  border: 1px solid #bd8066;
-  border-radius: 999px;
-  color: #7d321f;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  white-space: nowrap;
 }
 
 .currency-metrics {
@@ -1441,14 +1439,6 @@ main:focus {
   text-underline-offset: 0.25rem;
 }
 
-.settings-inline-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  margin-top: 1rem;
-}
-
-.settings-inline-actions button,
 .settings-rule-list button {
   min-height: 2.75rem;
   padding: 0.625rem 0.875rem;
@@ -1461,7 +1451,6 @@ main:focus {
   font-weight: 600;
 }
 
-.settings-inline-actions button:disabled,
 .settings-rule-list button:disabled {
   opacity: 0.5;
 }

@@ -43,8 +43,6 @@ beforeEach(async () => {
   await clearCategoryAudits(cloudflareEnv.DB);
   await cloudflareEnv.DB.batch(
     [
-      "transfer_match_audits",
-      "transfer_matches",
       "transactions",
       "merchant_rules",
       "categories WHERE system_key IS NULL",
@@ -53,58 +51,6 @@ beforeEach(async () => {
     ].map((table) => cloudflareEnv.DB.prepare(`DELETE FROM ${table}`)),
   );
   await cloudflareEnv.DB.batch([
-    cloudflareEnv.DB.prepare(
-      `INSERT INTO connections (
-        id, institution_id, institution_name, plaid_item_id,
-        access_token_ciphertext, access_token_iv, token_key_version,
-        status, last_success_at, created_at, updated_at, version
-      ) VALUES (
-        'connection-report-1', 'ins_report', 'Report Bank', 'item-report-1',
-        X'0102', X'0304', 1, 'HEALTHY', '2026-04-01T11:30:00.000Z', ?, ?, 1
-      )`,
-    ).bind(NOW, NOW),
-    cloudflareEnv.DB.prepare(
-      `INSERT INTO connections (
-        id, institution_id, institution_name, plaid_item_id,
-        access_token_ciphertext, access_token_iv, token_key_version,
-        status, last_success_at, created_at, updated_at, version
-      ) VALUES (
-        'connection-report-disabled', 'ins_disabled', 'Disabled Bank', 'item-report-disabled',
-        X'0102', X'0304', 1, 'ERROR', NULL, ?, ?, 1
-      )`,
-    ).bind(NOW, NOW),
-    cloudflareEnv.DB.prepare(
-      `INSERT INTO accounts (
-        id, connection_id, plaid_account_id, display_name, mask, type, subtype,
-        currency, enabled, created_at, updated_at, version
-      ) VALUES (
-        'account-disabled-1', 'connection-report-disabled', 'plaid-account-disabled',
-        'Disabled account', '9999', 'DEPOSITORY', 'CHECKING', 'CAD', 0, ?, ?, 1
-      )`,
-    ).bind(NOW, NOW),
-    ...[
-      [
-        "account-checking-1",
-        "plaid-account-report-checking",
-        "Daily Chequing",
-        "DEPOSITORY",
-        "CHECKING",
-      ],
-      [
-        "account-credit-card-1",
-        "plaid-account-report-credit",
-        "Credit Card",
-        "CREDIT",
-        "CREDIT_CARD",
-      ],
-    ].map(([id, plaidId, displayName, type, subtype]) =>
-      cloudflareEnv.DB.prepare(
-        `INSERT INTO accounts (
-          id, connection_id, plaid_account_id, display_name, mask, type, subtype,
-          currency, enabled, created_at, updated_at, version
-        ) VALUES (?, 'connection-report-1', ?, ?, '1234', ?, ?, 'CAD', 1, ?, ?, 1)`,
-      ).bind(id, plaidId, displayName, type, subtype, NOW, NOW),
-    ),
     ...[
       ["report-category-income", "Report income", "INCOME"],
       ["report-category-expense", "Report expense", "EXPENSE"],
@@ -123,19 +69,16 @@ beforeEach(async () => {
     fixture.transactions.map((transaction) =>
       cloudflareEnv.DB.prepare(
         `INSERT INTO transactions (
-          id, source, account_id, plaid_transaction_id, import_fingerprint,
-          status, authorized_date, posted_date, amount_minor, direction, currency,
+          id, source, account_label, import_fingerprint,
+          status, posted_date, amount_minor, direction, currency,
           raw_description, merchant_name, category_id, categorization_source,
           needs_review, created_at, updated_at, version
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 1)`,
+        ) VALUES (?, ?, 'Daily Chequing', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 1)`,
       ).bind(
         transaction.id,
         transaction.source,
-        transaction.accountId,
-        transaction.plaidTransactionId,
         transaction.source === "CSV" ? `fingerprint-${transaction.id}` : null,
         transaction.status,
-        transaction.authorizedDate,
         transaction.postedDate,
         transaction.amountMinor,
         transaction.direction,
@@ -174,21 +117,6 @@ beforeEach(async () => {
        WHERE id = 'report-march-manual-expense'`,
     ),
   ]);
-  const transferMatch = fixture.transferMatches[0]!;
-  await cloudflareEnv.DB.prepare(
-    `INSERT INTO transfer_matches (
-      id, left_transaction_id, right_transaction_id, status, confidence,
-      evidence_json, created_at, updated_at, version
-    ) VALUES (?, ?, ?, 'CONFIRMED', 'HIGH', '{}', ?, ?, 1)`,
-  )
-    .bind(
-      transferMatch.id,
-      transferMatch.leftTransactionId,
-      transferMatch.rightTransactionId,
-      NOW,
-      NOW,
-    )
-    .run();
 });
 
 describe("D1 financial report query layer", () => {
@@ -214,10 +142,10 @@ describe("D1 financial report query layer", () => {
     await cloudflareEnv.DB.batch(
       rows.map(([id, name, direction, amount, reimbursement]) =>
         cloudflareEnv.DB.prepare(
-          `INSERT INTO transactions (id, source, account_id, status, posted_date, amount_minor,
+          `INSERT INTO transactions (id, source, account_label, status, posted_date, amount_minor,
         reimbursement_minor, direction, currency, raw_description, normalized_merchant,
         category_id, categorization_source, needs_review, created_at, updated_at, version)
-       VALUES (?, 'MANUAL', 'account-checking-1', 'POSTED', '2026-01-10', ?, ?, ?, 'CAD', ?, ?, 'report-category-expense', 'MANUAL', 0, ?, ?, 1)`,
+       VALUES (?, 'MANUAL', 'Daily Chequing', 'POSTED', '2026-01-10', ?, ?, ?, 'CAD', ?, ?, 'report-category-expense', 'MANUAL', 0, ?, ?, 1)`,
         ).bind(id, amount, reimbursement, direction, name, String(name).toLowerCase(), NOW, NOW),
       ),
     );
@@ -272,7 +200,7 @@ describe("D1 financial report query layer", () => {
     }
     for (const filters of [
       { currency: "USD" },
-      { accountId: "account-credit-card-1" },
+      { accountId: "Credit Card" },
       { categoryId: "report-category-dining" },
       { dateFrom: "2026-02-01", dateTo: "2026-02-28" },
     ]) {
@@ -306,12 +234,14 @@ describe("D1 financial report query layer", () => {
     );
     expect(quarter.currencies).toEqual(fixture.expected.quarter.currencies);
     for (const id of [
-      ...fixture.expected.excludedTransactionIds.confirmedInternalTransfer,
       ...fixture.expected.excludedTransactionIds.pending,
       ...fixture.expected.excludedTransactionIds.removed,
     ]) {
       expect(january.eligibleTransactionIds).not.toContain(id);
       expect(quarter.eligibleTransactionIds).not.toContain(id);
+    }
+    for (const id of fixture.expected.internalTransferTransactionIds) {
+      expect(january.eligibleTransactionIds).toContain(id);
     }
   });
 
@@ -376,7 +306,7 @@ describe("D1 financial report query layer", () => {
     const repository = new FinancialReportRepository(cloudflareEnv.DB);
     await expect(
       repository.spendingBreakdown({
-        accountId: "account-checking-1",
+        accountId: "Daily Chequing",
         categoryId: "report-category-expense",
         grain: "MONTH",
         merchantLimit: 20,
@@ -394,6 +324,61 @@ describe("D1 financial report query layer", () => {
           netSpendingMinor: 10_000,
         },
       ],
+    });
+  });
+
+  it("filters spending and cash flow by a historical account-only Plaid label", async () => {
+    await cloudflareEnv.DB.batch([
+      cloudflareEnv.DB.prepare(
+        `INSERT INTO connections (
+          id, institution_id, institution_name, plaid_item_id,
+          access_token_ciphertext, access_token_iv, token_key_version,
+          status, created_at, updated_at, version
+        ) VALUES (
+          'connection-report-legacy', 'ins_legacy', 'Legacy Bank',
+          'plaid-item-report-legacy', X'01', X'02', 1, 'DISCONNECTED', ?, ?, 1
+        )`,
+      ).bind(NOW, NOW),
+      cloudflareEnv.DB.prepare(
+        `INSERT INTO accounts (
+          id, connection_id, plaid_account_id, display_name,
+          type, subtype, currency, enabled, created_at, updated_at, version
+        ) VALUES (
+          'account-report-legacy', 'connection-report-legacy',
+          'plaid-account-report-legacy', 'Legacy Savings', 'DEPOSITORY', 'CHECKING',
+          'CAD', 0, ?, ?, 1
+        )`,
+      ).bind(NOW, NOW),
+      cloudflareEnv.DB.prepare(
+        `INSERT INTO transactions (
+          id, source, account_id, plaid_transaction_id, status, posted_date,
+          amount_minor, direction, currency, raw_description, category_id,
+          categorization_source, needs_review, created_at, updated_at, version
+        ) VALUES (
+          'transaction-report-legacy', 'PLAID', 'account-report-legacy',
+          'plaid-transaction-report-legacy', 'POSTED', '2026-01-20', 777,
+          'OUTFLOW', 'CAD', 'Legacy purchase', 'report-category-expense',
+          'PLAID', 0, ?, ?, 1
+        )`,
+      ).bind(NOW, NOW),
+    ]);
+    const repository = new FinancialReportRepository(cloudflareEnv.DB);
+
+    await expect(
+      repository.spendingBreakdown({
+        accountId: "Legacy Savings",
+        grain: "MONTH",
+        period: "2026-01",
+      }),
+    ).resolves.toMatchObject({ sections: [{ currency: "CAD", netSpendingMinor: 777 }] });
+    await expect(
+      repository.cashFlow({
+        accountId: "Legacy Savings",
+        grain: "MONTH",
+        period: "2026-01",
+      }),
+    ).resolves.toMatchObject({
+      currencies: [{ currency: "CAD", netCashFlowMinor: -777, netSpendingMinor: 777 }],
     });
   });
 

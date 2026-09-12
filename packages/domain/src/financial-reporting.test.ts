@@ -14,24 +14,22 @@ import {
 import { createReconciledReportFixture } from "./testing";
 
 describe("cash-flow reporting semantics", () => {
-  it("uses one posted, non-internal eligible population", () => {
+  it("uses one posted eligible population and lets transfer categories contribute nothing", () => {
     const fixture = createReconciledReportFixture();
     const report = calculateCashFlowReport({
       categories: fixture.categories,
       dateFrom: "2026-01-01",
       dateTo: "2026-03-31",
       transactions: fixture.transactions,
-      transferMatches: fixture.transferMatches,
     });
 
     expect(report.eligibleTransactionIds).toEqual(fixture.expected.eligibleTransactionIds);
     const excluded = fixture.expected.excludedTransactionIds;
-    for (const id of [
-      ...excluded.confirmedInternalTransfer,
-      ...excluded.pending,
-      ...excluded.removed,
-    ]) {
+    for (const id of [...excluded.pending, ...excluded.removed]) {
       expect(report.eligibleTransactionIds).not.toContain(id);
+    }
+    for (const id of fixture.expected.internalTransferTransactionIds) {
+      expect(report.eligibleTransactionIds).toContain(id);
     }
   });
 
@@ -42,7 +40,6 @@ describe("cash-flow reporting semantics", () => {
       dateFrom: "2026-01-01",
       dateTo: "2026-01-31",
       transactions: fixture.transactions,
-      transferMatches: fixture.transferMatches,
     });
     const expectedJanuary = fixture.expected.months.find(({ period }) => period === "2026-01")!;
 
@@ -69,7 +66,6 @@ describe("cash-flow reporting semantics", () => {
         dateFrom: "2026-02-01",
         dateTo: "2026-02-28",
         transactions: fixture.transactions,
-        transferMatches: fixture.transferMatches,
       }),
     ).toEqual({ currencies: [], eligibleTransactionIds: [] });
   });

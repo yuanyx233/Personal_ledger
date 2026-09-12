@@ -110,7 +110,9 @@ for (const direction of ["OUTFLOW", "INFLOW"] as const) {
       await page.getByText("日期、币种和方向", { exact: true }).click();
       await page.getByLabel("方向").selectOption("INFLOW");
     }
-    const checkbox = page.getByRole("checkbox");
+    const checkbox = page.getByRole("checkbox", {
+      name: direction === "OUTFLOW" ? "分摊 / 报销抵扣" : "这是分摊 / 报销回款",
+    });
     await expect(checkbox).not.toBeChecked();
     await checkbox.focus();
     await page.keyboard.press("Space");
@@ -137,7 +139,11 @@ for (const direction of ["OUTFLOW", "INFLOW"] as const) {
       reimbursementAmount: "200",
       direction,
     });
-    await expect(page.getByRole("checkbox")).not.toBeChecked();
+    await expect(
+      page.getByRole("checkbox", {
+        name: "分摊 / 报销抵扣",
+      }),
+    ).not.toBeChecked();
     await expect(page.getByRole("textbox", { name: "金额", exact: true })).toHaveValue("");
   });
 }
@@ -147,11 +153,11 @@ test("can cancel a deduction or change direction without carrying a hidden deduc
 }) => {
   await page.goto("/add");
   await page.getByRole("textbox", { name: "金额", exact: true }).fill("300");
-  await page.getByRole("checkbox").check();
+  await page.getByRole("checkbox", { name: "分摊 / 报销抵扣" }).check();
   await page.getByLabel("抵扣金额", { exact: true }).fill("200");
-  await page.getByRole("checkbox").uncheck();
+  await page.getByRole("checkbox", { name: "分摊 / 报销抵扣" }).uncheck();
   await expect(page.getByLabel("抵扣金额", { exact: true })).toHaveCount(0);
-  await page.getByRole("checkbox").check();
+  await page.getByRole("checkbox", { name: "分摊 / 报销抵扣" }).check();
   await page.getByText("日期、币种和方向", { exact: true }).click();
   await page.getByLabel("方向").selectOption("INFLOW");
   await expect(page.getByRole("checkbox", { name: "这是分摊 / 报销回款" })).not.toBeChecked();
@@ -179,6 +185,105 @@ test("amount only accepts digits and up to two decimal places", async ({ page })
 
   await amount.fill(".5");
   await expect(amount).toHaveValue("0.5");
+});
+
+test("creates an optional installment schedule from quick entry", async ({ page }) => {
+  let submitted: Record<string, unknown> | null = null;
+  await page.route("**/api/v1/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/session")) {
+      await route.fulfill({
+        json: {
+          data: {
+            csrfToken: "csrf.payload",
+            identity: { email: "owner@example.invalid" },
+            timezone: "America/Toronto",
+          },
+          meta: {},
+        },
+      });
+      return;
+    }
+    if (path.endsWith("/transaction-previews")) {
+      await route.fulfill({
+        json: {
+          data: {
+            category: category("category-expense-shopping", "Shopping"),
+            kind: "KNOWN_MERCHANT",
+          },
+          meta: {},
+        },
+      });
+      return;
+    }
+    if (path.endsWith("/transactions") && route.request().method() === "POST") {
+      submitted = route.request().postDataJSON() as Record<string, unknown>;
+      const first = {
+        accountLabel: submitted.accountLabel,
+        amountMinor: 3333,
+        reimbursementMinor: 0,
+        categorizationSource: "RULE",
+        categoryId: "category-expense-shopping",
+        createdAt: "2026-09-11T12:00:00.000Z",
+        currency: submitted.currency,
+        description: submitted.description,
+        direction: submitted.direction,
+        id: "transaction-installment-1",
+        installment: { count: 3, groupId: "installment-group-1", number: 1 },
+        merchantName: submitted.description,
+        normalizedMerchant: "laptop",
+        postedDate: submitted.postedDate,
+        source: "MANUAL",
+        status: "POSTED",
+        updatedAt: "2026-09-11T12:00:00.000Z",
+        version: 1,
+      };
+      await route.fulfill({
+        status: 201,
+        json: {
+          data: {
+            categoryConfirmationRequired: false,
+            transaction: first,
+            transactions: [
+              first,
+              {
+                ...first,
+                id: "transaction-installment-2",
+                installment: { ...first.installment, number: 2 },
+                postedDate: "2026-10-11",
+              },
+              {
+                ...first,
+                amountMinor: 3334,
+                id: "transaction-installment-3",
+                installment: { ...first.installment, number: 3 },
+                postedDate: "2026-11-11",
+              },
+            ],
+          },
+          meta: {},
+        },
+      });
+      return;
+    }
+    await route.fulfill({ status: 404 });
+  });
+
+  await page.goto("/add");
+  await page.getByRole("textbox", { name: "金额", exact: true }).fill("100");
+  await page.getByLabel("商户或描述").fill("Laptop");
+  await page.getByRole("checkbox", { name: "分期付款" }).check();
+  const count = page.getByRole("spinbutton", { name: "期数" });
+  await expect(count).toHaveValue("3");
+  await count.fill("61");
+  await page.getByRole("button", { name: "记入账本" }).click();
+  expect(submitted).toBeNull();
+
+  await count.fill("3");
+  await page.getByRole("button", { name: "记入账本" }).click();
+  await expect(page.getByRole("status")).toContainText("3 期");
+  expect(submitted).toMatchObject({ amount: "100", description: "Laptop", installmentCount: 3 });
+  await expect(page.getByRole("checkbox", { name: "分期付款" })).not.toBeChecked();
 });
 
 test("keeps the reimbursement control usable across narrow and wide layouts", async ({ page }) => {
@@ -471,6 +576,113 @@ test("confirms a new merchant before writing and offers the complete category li
   ]);
 });
 
+test("confirms Amazon every time without learning one permanent category", async ({ page }) => {
+  let submitted: Record<string, unknown> | null = null;
+  await page.route("**/api/v1/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (path.endsWith("/session")) {
+      await route.fulfill({
+        json: {
+          data: {
+            csrfToken: "csrf.payload",
+            identity: { email: "owner@example.invalid" },
+            timezone: "America/Toronto",
+          },
+          meta: {},
+        },
+      });
+      return;
+    }
+    if (path.endsWith("/transaction-previews")) {
+      await route.fulfill({
+        json: {
+          data: {
+            category: category("category-expense-shopping", "Shopping"),
+            kind: "KNOWN_MERCHANT",
+          },
+          meta: {},
+        },
+      });
+      return;
+    }
+    if (path.endsWith("/categories") && request.method() === "GET") {
+      await route.fulfill({
+        json: {
+          data: {
+            categories: [
+              category("category-expense-housing", "Housing"),
+              category("category-expense-shopping", "Shopping"),
+            ],
+          },
+          meta: {},
+        },
+      });
+      return;
+    }
+    if (path.endsWith("/transactions") && request.method() === "POST") {
+      submitted = request.postDataJSON() as Record<string, unknown>;
+      await route.fulfill({
+        status: 201,
+        json: {
+          data: {
+            categoryConfirmationRequired: false,
+            transaction: {
+              accountLabel: "RBC Credit",
+              amountMinor: 2500,
+              categorizationSource: "MANUAL",
+              categoryId: "category-expense-housing",
+              createdAt: "2026-09-11T12:00:00.000Z",
+              currency: "CAD",
+              description: "Amazon",
+              direction: "OUTFLOW",
+              id: "transaction-amazon-housing",
+              merchantName: "Amazon",
+              normalizedMerchant: "amazon",
+              postedDate: "2026-09-11",
+              source: "MANUAL",
+              status: "POSTED",
+              updatedAt: "2026-09-11T12:00:00.000Z",
+              version: 1,
+            },
+          },
+          meta: {},
+        },
+      });
+      return;
+    }
+    await route.fulfill({ status: 404 });
+  });
+
+  await page.goto("/add");
+  await page.getByLabel("金额").fill("25.00");
+  await page.getByLabel("商户或描述").fill("Amazon");
+  await page.getByRole("button", { name: "记入账本" }).click();
+
+  const dialog = page.getByRole("dialog", { name: "确认分类" });
+  await expect(dialog).toContainText("多类别商户 · 尚未写入");
+  await expect(dialog).toContainText("每次录入前都会让你确认");
+  await expect(dialog).toContainText("匹配依据：北美商户知识库 · Amazon");
+  await dialog.getByRole("combobox", { name: "分类" }).selectOption("category-expense-housing");
+  await page.getByRole("button", { name: "确认并录入" }).click();
+  await expect(page.getByRole("status")).toContainText("已记下并分类为“Housing”");
+
+  expect(submitted).toEqual(
+    expect.objectContaining({
+      categoryId: "category-expense-housing",
+      description: "Amazon",
+    }),
+  );
+  expect(submitted).not.toHaveProperty("rememberMerchant");
+
+  await page.getByLabel("金额").fill("12.99");
+  await page.getByLabel("商户或描述").fill("Amazon.com Prime");
+  await page.getByRole("button", { name: "记入账本" }).click();
+  await expect(dialog).toContainText("多类别商户 · 尚未写入");
+  await expect(dialog).toContainText("匹配依据：北美商户知识库 · Amazon Prime");
+  await page.getByRole("button", { name: "取消" }).click();
+});
+
 test("keeps a new-merchant confirmation intact when the final write needs retry", async ({
   page,
 }) => {
@@ -640,24 +852,6 @@ test("accepts a suggestion and learns an exact future merchant rule", async ({ p
       });
       return;
     }
-    if (url.pathname.endsWith("/category-suggestions")) {
-      await route.fulfill({
-        body: JSON.stringify({
-          data: {
-            suggestions: [
-              {
-                category: category("category-expense-food", "Food & Dining"),
-                reason: "POPULAR_EXPENSE",
-              },
-            ],
-            transactionId: "transaction-quick-rule",
-          },
-          meta: {},
-        }),
-        contentType: "application/json",
-      });
-      return;
-    }
     if (url.pathname.endsWith("/categories") && request.method() === "GET") {
       await route.fulfill({
         body: JSON.stringify({
@@ -688,7 +882,6 @@ test("accepts a suggestion and learns an exact future merchant rule", async ({ p
               version: 1,
             },
             transaction: {
-              accountId: null,
               accountLabel: "RBC Credit",
               amountMinor: 875,
               authorizedDate: null,
@@ -815,16 +1008,6 @@ test("searches existing categories and requires a second confirmation before cre
       });
       return;
     }
-    if (url.pathname.endsWith("/category-suggestions")) {
-      await route.fulfill({
-        body: JSON.stringify({
-          data: { suggestions: [], transactionId: "transaction-quick-new-category" },
-          meta: {},
-        }),
-        contentType: "application/json",
-      });
-      return;
-    }
     if (url.pathname.endsWith("/categories") && request.method() === "GET") {
       await route.fulfill({
         body: JSON.stringify({
@@ -867,7 +1050,6 @@ test("searches existing categories and requires a second confirmation before cre
               version: 1,
             },
             transaction: {
-              accountId: null,
               accountLabel: "RBC Credit",
               amountMinor: 2200,
               authorizedDate: null,

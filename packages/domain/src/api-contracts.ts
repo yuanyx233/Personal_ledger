@@ -323,6 +323,7 @@ export const decimalAmountSchema = z
   .brand<"DecimalAmount">();
 
 export const manualTransactionCurrencySchema = z.enum(["CAD", "USD"]);
+export const installmentCountSchema = z.int().min(2).max(60);
 
 const manualTransactionFields = {
   accountLabel: z.string().trim().min(1).max(160),
@@ -338,6 +339,7 @@ const manualTransactionFields = {
 export const manualTransactionCreateRequestSchema = z
   .strictObject({
     ...manualTransactionFields,
+    installmentCount: installmentCountSchema.optional(),
     rememberMerchant: z.literal(true).optional(),
   })
   .refine((value) => Number(value.reimbursementAmount ?? "0") <= Number(value.amount), {
@@ -357,6 +359,7 @@ export const manualTransactionPreviewRequestSchema = z
     currency: manualTransactionFields.currency,
     description: manualTransactionFields.description,
     direction: manualTransactionFields.direction,
+    installmentCount: installmentCountSchema.optional(),
     postedDate: manualTransactionFields.postedDate,
   })
   .refine((value) => Number(value.reimbursementAmount ?? "0") <= Number(value.amount), {
@@ -440,8 +443,18 @@ export const transactionIdSchema = z
   .regex(/^(?:transaction-[A-Za-z0-9_-]{1,148}|csv-[A-Za-z0-9_-]{1,156})$/)
   .brand<"TransactionId">();
 
+const transactionInstallmentSchema = z
+  .strictObject({
+    count: installmentCountSchema,
+    groupId: identifierSchema,
+    number: z.int().min(1).max(60),
+  })
+  .refine((installment) => installment.number <= installment.count, {
+    message: "Installment number cannot exceed installment count.",
+    path: ["number"],
+  });
+
 const transactionReadModelSchema = z.strictObject({
-  accountId: identifierSchema.nullable(),
   accountLabel: z.string().min(1).max(160).nullable(),
   amountMinor: amountMinorSchema,
   reimbursementMinor: z.int().nonnegative().default(0),
@@ -454,6 +467,7 @@ const transactionReadModelSchema = z.strictObject({
   description: z.string().min(1).max(512),
   direction: moneyDirectionSchema,
   id: transactionIdSchema,
+  installment: transactionInstallmentSchema.nullable().optional(),
   merchantName: z.string().max(256).nullable(),
   needsReview: z.boolean(),
   normalizedMerchant: z.string().max(256).nullable(),
@@ -637,6 +651,7 @@ export const manualTransactionReadModelSchema = z.strictObject({
   description: z.string().min(1).max(512),
   direction: moneyDirectionSchema,
   id: transactionIdSchema,
+  installment: transactionInstallmentSchema.nullable().optional(),
   merchantName: z.string().min(1).max(256),
   normalizedMerchant: z.string().min(1).max(256),
   postedDate: calendarDateSchema,
@@ -650,6 +665,11 @@ export const manualTransactionCreateResponseSchema = apiSuccessEnvelopeSchema(
   z.strictObject({
     categoryConfirmationRequired: z.boolean(),
     transaction: manualTransactionReadModelSchema.extend({ status: z.literal("POSTED") }),
+    transactions: z
+      .array(manualTransactionReadModelSchema.extend({ status: z.literal("POSTED") }))
+      .min(1)
+      .max(60)
+      .optional(),
   }),
   z.strictObject({}),
 );
@@ -667,54 +687,13 @@ export const manualTransactionMutationResponseSchema = apiSuccessEnvelopeSchema(
   z.strictObject({}),
 );
 
-export const categorySuggestionsResponseSchema = apiSuccessEnvelopeSchema(
-  z.strictObject({
-    suggestions: z
-      .array(
-        z.strictObject({
-          category: categoryReadModelSchema,
-          reason: z.enum(["RECENT_MERCHANT", "POPULAR_EXPENSE"]),
-        }),
-      )
-      .max(2),
-    transactionId: transactionIdSchema,
-  }),
-  z.strictObject({}),
-);
-
-export type ApiErrorEnvelope = z.infer<typeof apiErrorEnvelopeSchema>;
-export type SessionResponse = z.infer<typeof sessionResponseSchema>;
 export type CategoryReadModel = z.infer<typeof categoryReadModelSchema>;
 export type CategoriesResponse = z.infer<typeof categoriesResponseSchema>;
-export type CategoryCreateRequest = z.infer<typeof categoryCreateRequestSchema>;
-export type CategoryMutationResponse = z.infer<typeof categoryMutationResponseSchema>;
-export type CategorySuggestionsResponse = z.infer<typeof categorySuggestionsResponseSchema>;
-export type CursorPaginationQuery = z.infer<typeof cursorPaginationQuerySchema>;
-export type CursorPaginationMeta = z.infer<typeof cursorPaginationMetaSchema>;
-export type Money = z.infer<typeof moneySchema>;
-export type ManualTransactionCreateRequest = z.infer<typeof manualTransactionCreateRequestSchema>;
-export type ManualTransactionPreviewRequest = z.infer<typeof manualTransactionPreviewRequestSchema>;
 export type ManualTransactionPreviewResponse = z.infer<
   typeof manualTransactionPreviewResponseSchema
 >;
-export type ManualTransactionUpdateRequest = z.infer<typeof manualTransactionUpdateRequestSchema>;
-export type ManualTransactionReadModel = z.infer<typeof manualTransactionReadModelSchema>;
-export type MerchantRuleCorrectionRequest = z.infer<typeof merchantRuleCorrectionRequestSchema>;
-export type MerchantRuleCorrectionResponse = z.infer<typeof merchantRuleCorrectionResponseSchema>;
-export type MerchantRuleCreateRequest = z.infer<typeof merchantRuleCreateRequestSchema>;
-export type MerchantRuleImpact = z.infer<typeof merchantRuleImpactSchema>;
-export type MerchantRuleListQuery = z.infer<typeof merchantRuleListQuerySchema>;
 export type MerchantRuleListResponse = z.infer<typeof merchantRuleListResponseSchema>;
-export type MerchantRuleMutationResponse = z.infer<typeof merchantRuleMutationResponseSchema>;
 export type MerchantRulePreviewResponse = z.infer<typeof merchantRulePreviewResponseSchema>;
-export type MerchantRuleReadModel = z.infer<typeof merchantRuleReadModelSchema>;
-export type MerchantRuleUpdateRequest = z.infer<typeof merchantRuleUpdateRequestSchema>;
-export type TransactionCategoryOverrideRequest = z.infer<
-  typeof transactionCategoryOverrideRequestSchema
->;
-export type TransactionCategoryOverrideResponse = z.infer<
-  typeof transactionCategoryOverrideResponseSchema
->;
 export type TransactionListResponse = z.infer<typeof transactionListResponseSchema>;
 export type TransactionDetailResponse = z.infer<typeof transactionDetailResponseSchema>;
 

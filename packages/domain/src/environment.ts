@@ -22,5 +22,3 @@ export const appWorkerEnvSchema = z.object({
   CSRF_HMAC_KEY: z.string().regex(/^[A-Za-z0-9+/]{43}=$/),
   OWNER_EMAIL: z.email(),
 });
-export type AppWorkerEnv = z.infer<typeof appWorkerEnvSchema>;
-export type PublicClientEnv = z.infer<typeof publicClientEnvSchema>;

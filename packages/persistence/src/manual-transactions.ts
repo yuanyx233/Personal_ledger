@@ -1,4 +1,8 @@
-import { calendarDateSchema, manualTransactionCurrencySchema } from "@ledger/domain/api-contracts";
+import {
+  calendarDateSchema,
+  installmentCountSchema,
+  manualTransactionCurrencySchema,
+} from "@ledger/domain/api-contracts";
 import { normalizeMerchantName } from "@ledger/domain";
 import * as z from "zod";
 
@@ -36,12 +40,15 @@ const createSchema = z
     currency: mutableFields.currency,
     description: mutableFields.description,
     direction: mutableFields.direction,
+    installmentCount: installmentCountSchema.optional(),
     now: nowSchema,
     postedDate: mutableFields.postedDate,
     rememberMerchant: z.literal(true).optional(),
   })
   .refine((value) => value.reimbursementMinor <= value.amountMinor)
   .refine((value) => value.rememberMerchant !== true || value.categoryId !== undefined);
+
+type ManualTransactionCreateInput = z.infer<typeof createSchema>;
 
 const updateSchema = z
   .strictObject({
@@ -80,7 +87,13 @@ export type ManualTransactionRecord = TransactionRecord & {
 };
 
 export type ManualTransactionCreateResult =
-  { kind: "CATEGORY_NOT_FOUND" } | { kind: "CREATED"; transaction: ManualTransactionRecord };
+  | { kind: "CATEGORY_CONFIRMATION_REQUIRED" }
+  | { kind: "CATEGORY_NOT_FOUND" }
+  | {
+      kind: "CREATED";
+      transaction: ManualTransactionRecord;
+      transactions?: ManualTransactionRecord[];
+    };
 
 export type ManualTransactionMutationResult =
   | { kind: "CATEGORY_NOT_FOUND" }
@@ -104,6 +117,7 @@ export class ManualTransactionPersistenceError extends Error {
 
 export interface ManualTransactionRepositoryOptions {
   createId?: () => string;
+  createInstallmentGroupId?: () => string;
   createRuleId?: () => string;
 }
 
@@ -113,6 +127,50 @@ function defaultCreateId(): string {
 
 function defaultCreateRuleId(): string {
   return `merchant-rule-${crypto.randomUUID()}`;
+}
+
+function defaultCreateInstallmentGroupId(): string {
+  return `installment-${crypto.randomUUID()}`;
+}
+
+function allocateMinorUnits(total: number, count: number): number[] {
+  const regularAmount = Math.floor(total / count);
+  return Array.from({ length: count }, (_, index) =>
+    index === count - 1 ? total - regularAmount * (count - 1) : regularAmount,
+  );
+}
+
+function allocateMinorUnitsWithinCaps(total: number, caps: readonly number[]): number[] {
+  let remaining = total;
+  const allocated = Array.from({ length: caps.length }, () => 0);
+  const regularAmount = Math.floor(total / caps.length);
+  for (let index = 0; index < caps.length; index += 1) {
+    const amount = Math.min(regularAmount, caps[index]!, remaining);
+    allocated[index] = amount;
+    remaining -= amount;
+  }
+  for (let index = caps.length - 1; index >= 0 && remaining > 0; index -= 1) {
+    const available = caps[index]! - allocated[index]!;
+    const amount = Math.min(available, remaining);
+    allocated[index]! += amount;
+    remaining -= amount;
+  }
+  return allocated;
+}
+
+function monthlyInstallmentDates(firstDate: string, count: number): string[] {
+  const [yearText, monthText, dayText] = firstDate.split("-");
+  const year = Number(yearText);
+  const monthIndex = Number(monthText) - 1;
+  const day = Number(dayText);
+  return Array.from({ length: count }, (_, offset) => {
+    const absoluteMonth = monthIndex + offset;
+    const targetYear = year + Math.floor(absoluteMonth / 12);
+    const targetMonthIndex = absoluteMonth % 12;
+    const lastDay = new Date(Date.UTC(targetYear, targetMonthIndex + 1, 0)).getUTCDate();
+    const targetDay = Math.min(day, lastDay);
+    return `${String(targetYear).padStart(4, "0")}-${String(targetMonthIndex + 1).padStart(2, "0")}-${String(targetDay).padStart(2, "0")}`;
+  });
 }
 
 function asManualTransaction(record: TransactionRecord | null): ManualTransactionRecord | null {
@@ -131,6 +189,7 @@ function asManualTransaction(record: TransactionRecord | null): ManualTransactio
 
 export class ManualTransactionRepository {
   private readonly createId: () => string;
+  private readonly createInstallmentGroupId: () => string;
   private readonly createRuleId: () => string;
   private readonly transactions: TransactionRepository;
 
@@ -139,6 +198,8 @@ export class ManualTransactionRepository {
     options: ManualTransactionRepositoryOptions = {},
   ) {
     this.createId = options.createId ?? defaultCreateId;
+    this.createInstallmentGroupId =
+      options.createInstallmentGroupId ?? defaultCreateInstallmentGroupId;
     this.createRuleId = options.createRuleId ?? defaultCreateRuleId;
     this.transactions = new TransactionRepository(database);
   }
@@ -155,16 +216,212 @@ export class ManualTransactionRepository {
     return asManualTransaction(await this.transactions.findById(id));
   }
 
+  private async createInstallmentSchedule(
+    transaction: ManualTransactionCreateInput & { installmentCount: number },
+    merchantName: string,
+    normalizedMerchant: string,
+  ): Promise<ManualTransactionCreateResult> {
+    const count = transaction.installmentCount;
+    const groupId = this.createInstallmentGroupId();
+    const amounts = allocateMinorUnits(transaction.amountMinor, count);
+    const reimbursements = allocateMinorUnitsWithinCaps(transaction.reimbursementMinor, amounts);
+    const dates = monthlyInstallmentDates(transaction.postedDate, count);
+    const transactionIds = Array.from({ length: count }, () => this.createId());
+
+    if (transaction.rememberMerchant) {
+      const ruleId = this.createRuleId();
+      const statements = [
+        this.database
+          .prepare(
+            `INSERT INTO merchant_rules (
+               id, normalized_merchant, display_merchant, category_id, active,
+               created_at, updated_at, version
+             )
+             SELECT ?, ?, ?, category.id, 1, ?, ?, 1
+             FROM categories AS category
+             WHERE category.id = ? AND category.active = 1 AND category.editable = 1
+             ON CONFLICT(normalized_merchant) DO UPDATE SET
+               display_merchant = excluded.display_merchant,
+               category_id = excluded.category_id,
+               active = 1,
+               updated_at = excluded.updated_at,
+               version = merchant_rules.version + 1
+             RETURNING id`,
+          )
+          .bind(
+            ruleId,
+            normalizedMerchant,
+            merchantName,
+            transaction.now,
+            transaction.now,
+            transaction.categoryId,
+          ),
+        ...transactionIds.map((id, index) =>
+          this.database
+            .prepare(
+              `INSERT INTO transactions (
+                 id, source, account_label, status,
+                 posted_date, amount_minor, reimbursement_minor, direction, currency,
+                 raw_description, merchant_name, payment_metadata_json, category_id,
+                 categorization_source, category_rule_id, needs_review, review_reason,
+                 normalized_merchant, installment_group_id, installment_number,
+                 installment_count, created_at, updated_at, version
+               )
+               SELECT
+                 ?, 'MANUAL', ?, 'POSTED', ?, ?, ?, ?, ?, ?, ?, NULL,
+                 merchant_rule.category_id, 'RULE', merchant_rule.id, 0, NULL, ?, ?, ?, ?, ?, ?, 1
+               FROM merchant_rules AS merchant_rule
+               JOIN categories AS category
+                 ON category.id = merchant_rule.category_id AND category.active = 1
+               WHERE merchant_rule.normalized_merchant = ?
+                 AND merchant_rule.category_id = ?
+                 AND merchant_rule.active = 1
+               RETURNING ${TRANSACTION_COLUMNS}`,
+            )
+            .bind(
+              id,
+              transaction.accountLabel,
+              dates[index],
+              amounts[index],
+              reimbursements[index],
+              transaction.direction,
+              transaction.currency,
+              transaction.description,
+              merchantName,
+              normalizedMerchant,
+              groupId,
+              index + 1,
+              count,
+              transaction.now,
+              transaction.now,
+              normalizedMerchant,
+              transaction.categoryId,
+            ),
+        ),
+      ];
+      const results = await this.database.batch<Record<string, unknown> | TransactionRow>(
+        statements,
+      );
+      if (!results[0]?.results[0]) return { kind: "CATEGORY_NOT_FOUND" };
+      const created = results
+        .slice(1)
+        .map((result) => {
+          const row = result.results[0] as TransactionRow | undefined;
+          return row ? asManualTransaction(toTransactionRecord(row)) : null;
+        })
+        .filter((record): record is ManualTransactionRecord => record !== null);
+      if (created.length !== count) throw new ManualTransactionPersistenceError("WRITE_FAILED");
+      return { kind: "CREATED", transaction: created[0]!, transactions: created };
+    }
+
+    const statements = transactionIds.map((id, index) =>
+      this.database
+        .prepare(
+          `WITH active_explicit_category AS (
+             SELECT id FROM categories WHERE id = ? AND active = 1
+           ), matched_rule AS (
+             SELECT merchant_rule.id, merchant_rule.category_id
+             FROM merchant_rules AS merchant_rule
+             JOIN categories AS rule_category
+               ON rule_category.id = merchant_rule.category_id AND rule_category.active = 1
+             WHERE merchant_rule.normalized_merchant = ? AND merchant_rule.active = 1
+           ), resolution AS (
+             SELECT
+               CASE
+                 WHEN ? IS NOT NULL THEN (SELECT id FROM active_explicit_category)
+                 WHEN matched_rule.id IS NOT NULL THEN matched_rule.category_id
+                 ELSE unclassified.id
+               END AS category_id,
+               CASE
+                 WHEN ? IS NOT NULL THEN 'MANUAL'
+                 WHEN matched_rule.id IS NOT NULL THEN 'RULE'
+                 ELSE 'UNCLASSIFIED'
+               END AS categorization_source,
+               CASE WHEN ? IS NULL THEN matched_rule.id ELSE NULL END AS category_rule_id
+             FROM categories AS unclassified
+             LEFT JOIN matched_rule ON 1 = 1
+             WHERE unclassified.system_key = 'UNCLASSIFIED'
+               AND (? IS NULL OR EXISTS (SELECT 1 FROM active_explicit_category))
+               AND (? IS NOT NULL OR matched_rule.id IS NOT NULL)
+           )
+           INSERT INTO transactions (
+             id, source, account_label, status,
+             posted_date, amount_minor, reimbursement_minor, direction, currency,
+             raw_description, merchant_name, payment_metadata_json, category_id,
+             categorization_source, category_rule_id, needs_review, review_reason,
+             normalized_merchant, installment_group_id, installment_number,
+             installment_count, created_at, updated_at, version
+           ) SELECT
+             ?, 'MANUAL', ?, 'POSTED', ?, ?, ?, ?, ?, ?, ?, NULL, resolution.category_id,
+             resolution.categorization_source, resolution.category_rule_id,
+             CASE WHEN resolution.categorization_source = 'UNCLASSIFIED' THEN 1 ELSE 0 END,
+             CASE WHEN resolution.categorization_source = 'UNCLASSIFIED'
+               THEN 'UNCLASSIFIED_MERCHANT' ELSE NULL END,
+             ?, ?, ?, ?, ?, ?, 1
+           FROM resolution
+           RETURNING ${TRANSACTION_COLUMNS}`,
+        )
+        .bind(
+          transaction.categoryId ?? null,
+          normalizedMerchant,
+          transaction.categoryId ?? null,
+          transaction.categoryId ?? null,
+          transaction.categoryId ?? null,
+          transaction.categoryId ?? null,
+          transaction.categoryId ?? null,
+          id,
+          transaction.accountLabel,
+          dates[index],
+          amounts[index],
+          reimbursements[index],
+          transaction.direction,
+          transaction.currency,
+          transaction.description,
+          merchantName,
+          normalizedMerchant,
+          groupId,
+          index + 1,
+          count,
+          transaction.now,
+          transaction.now,
+        ),
+    );
+    const results = await this.database.batch<TransactionRow>(statements);
+    const created = results
+      .map((result) => {
+        const row = result.results[0];
+        return row ? asManualTransaction(toTransactionRecord(row)) : null;
+      })
+      .filter((record): record is ManualTransactionRecord => record !== null);
+    if (created.length === 0) {
+      return {
+        kind:
+          transaction.categoryId === undefined
+            ? "CATEGORY_CONFIRMATION_REQUIRED"
+            : "CATEGORY_NOT_FOUND",
+      };
+    }
+    if (created.length !== count) throw new ManualTransactionPersistenceError("WRITE_FAILED");
+    return { kind: "CREATED", transaction: created[0]!, transactions: created };
+  }
+
   async create(input: unknown): Promise<ManualTransactionCreateResult> {
     const parsed = createSchema.safeParse(input);
     if (!parsed.success) throw new ManualTransactionPersistenceError("INVALID_INPUT");
     const transaction = parsed.data;
 
     try {
-      const id = this.createId();
       const merchantName = transaction.description.trim().slice(0, 256);
       const normalizedMerchant = normalizeMerchantName(merchantName);
       if (!normalizedMerchant) throw new ManualTransactionPersistenceError("INVALID_INPUT");
+      if (transaction.installmentCount !== undefined) {
+        return await this.createInstallmentSchedule(
+          transaction as ManualTransactionCreateInput & { installmentCount: number },
+          merchantName,
+          normalizedMerchant,
+        );
+      }
+      const id = this.createId();
       if (transaction.rememberMerchant) {
         const ruleId = this.createRuleId();
         const statements = [
@@ -196,17 +453,17 @@ export class ManualTransactionRepository {
           this.database
             .prepare(
               `INSERT INTO transactions (
-                 id, source, account_id, account_label, plaid_transaction_id,
-                 pending_transaction_id, import_fingerprint, status, authorized_date,
+                 id, source, account_label,
+                 status,
                  posted_date, amount_minor, reimbursement_minor, direction, currency,
-                 provider_amount_decimal, raw_description, merchant_name,
+                 raw_description, merchant_name,
                  payment_metadata_json, category_id, categorization_source,
                  category_rule_id, needs_review, review_reason, normalized_merchant,
                  created_at, updated_at, version
                )
                SELECT
-                 ?, 'MANUAL', NULL, ?, NULL, NULL, NULL, 'POSTED', NULL,
-                 ?, ?, ?, ?, ?, NULL, ?, ?, NULL, merchant_rule.category_id, 'RULE',
+                 ?, 'MANUAL', ?, 'POSTED',
+                 ?, ?, ?, ?, ?, ?, ?, NULL, merchant_rule.category_id, 'RULE',
                  merchant_rule.id, 0, NULL, ?, ?, ?, 1
                FROM merchant_rules AS merchant_rule
                JOIN categories AS category
@@ -269,18 +526,19 @@ export class ManualTransactionRepository {
              LEFT JOIN matched_rule ON 1 = 1
              WHERE unclassified.system_key = 'UNCLASSIFIED'
                AND (? IS NULL OR EXISTS (SELECT 1 FROM active_explicit_category))
+               AND (? IS NOT NULL OR matched_rule.id IS NOT NULL)
            )
           INSERT INTO transactions (
-            id, source, account_id, account_label, plaid_transaction_id,
-            pending_transaction_id, import_fingerprint, status, authorized_date,
-            posted_date, amount_minor, reimbursement_minor, direction, currency, provider_amount_decimal,
+            id, source, account_label,
+            status,
+            posted_date, amount_minor, reimbursement_minor, direction, currency,
             raw_description, merchant_name, payment_metadata_json, category_id,
             categorization_source, category_rule_id, needs_review, review_reason,
             normalized_merchant,
             created_at, updated_at, version
           ) SELECT
-            ?, 'MANUAL', NULL, ?, NULL, NULL, NULL, 'POSTED', NULL,
-            ?, ?, ?, ?, ?, NULL, ?, ?, NULL, resolution.category_id,
+            ?, 'MANUAL', ?, 'POSTED',
+            ?, ?, ?, ?, ?, ?, ?, NULL, resolution.category_id,
             resolution.categorization_source, resolution.category_rule_id,
             CASE WHEN resolution.categorization_source = 'UNCLASSIFIED' THEN 1 ELSE 0 END,
             CASE WHEN resolution.categorization_source = 'UNCLASSIFIED'
@@ -292,6 +550,7 @@ export class ManualTransactionRepository {
         .bind(
           transaction.categoryId ?? null,
           normalizedMerchant,
+          transaction.categoryId ?? null,
           transaction.categoryId ?? null,
           transaction.categoryId ?? null,
           transaction.categoryId ?? null,
@@ -310,7 +569,14 @@ export class ManualTransactionRepository {
           transaction.now,
         )
         .first<TransactionRow>();
-      if (!row) return { kind: "CATEGORY_NOT_FOUND" };
+      if (!row) {
+        return {
+          kind:
+            transaction.categoryId === undefined
+              ? "CATEGORY_CONFIRMATION_REQUIRED"
+              : "CATEGORY_NOT_FOUND",
+        };
+      }
       const created = asManualTransaction(toTransactionRecord(row));
       if (!created) throw new ManualTransactionPersistenceError("WRITE_FAILED");
       return { kind: "CREATED", transaction: created };

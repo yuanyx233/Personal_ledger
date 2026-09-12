@@ -43,30 +43,6 @@ const NOW = "2026-07-17T12:00:00.000Z";
 const RESULT_SETS = [
   [
     {
-      created_at: NOW,
-      id: "connection-1",
-      institution_id: "ins_1",
-      institution_name: "Fixture Bank",
-      updated_at: NOW,
-      version: 2,
-    },
-  ],
-  [
-    {
-      connection_id: "connection-1",
-      created_at: NOW,
-      currency: "CAD",
-      display_name: "Daily Chequing",
-      enabled: 1,
-      id: "account-1",
-      subtype: "CHECKING",
-      type: "DEPOSITORY",
-      updated_at: NOW,
-      version: 1,
-    },
-  ],
-  [
-    {
       active: 1,
       created_at: NOW,
       editable: 1,
@@ -92,8 +68,7 @@ const RESULT_SETS = [
   ],
   [
     {
-      account_id: "account-1",
-      account_label: null,
+      account_label: "Daily Chequing",
       amount_minor: 1234,
       authorized_date: null,
       categorization_source: "RULE",
@@ -104,20 +79,19 @@ const RESULT_SETS = [
       direction: "OUTFLOW",
       id: "transaction-1",
       import_fingerprint: null,
+      installment_count: 3,
+      installment_group_id: "installment-group-1",
+      installment_number: 1,
       merchant_name: "Fixture Cafe",
       needs_review: 0,
       normalized_merchant: "fixture cafe",
       payment_metadata_json:
         '{"payee":"Cafe","payer":null,"paymentMethod":"CARD","referenceNumber":"r-1","ignored":"do-not-export"}',
       pending_transaction_id: null,
-      plaid_pfc_confidence: "HIGH",
-      plaid_pfc_detailed: "FOOD_AND_DRINK_COFFEE",
-      plaid_pfc_primary: "FOOD_AND_DRINK",
-      plaid_transaction_id: "provider-transaction-1",
       posted_date: "2026-07-17",
       raw_description: "Coffee",
       review_reason: null,
-      source: "PLAID",
+      source: "MANUAL",
       status: "POSTED",
       updated_at: NOW,
       version: 3,
@@ -135,33 +109,6 @@ const RESULT_SETS = [
       old_source: "UNCLASSIFIED",
       reason: "RULE_CATEGORIZATION",
       transaction_id: "transaction-1",
-    },
-  ],
-  [
-    {
-      confidence: "HIGH",
-      created_at: NOW,
-      decision_reason: null,
-      evidence_json:
-        '{"amountMinor":1234,"currency":"CAD","dayDifference":0,"signals":["DESCRIPTION"]}',
-      id: "transfer-match-1",
-      left_transaction_id: "transaction-1",
-      right_transaction_id: "transaction-2",
-      status: "AUTO_CONFIRMED",
-      updated_at: NOW,
-      version: 1,
-    },
-  ],
-  [
-    {
-      action: "CONFIRM",
-      created_at: NOW,
-      id: "transfer-audit-1",
-      match_version: 2,
-      new_status: "CONFIRMED",
-      old_status: "AUTO_CONFIRMED",
-      reason: "OWNER_CONFIRMED",
-      transfer_match_id: "transfer-match-1",
     },
   ],
   [
@@ -233,11 +180,11 @@ describe("full JSON export snapshot repository", () => {
     const data = await new FullJsonExportRepository(recording.database).readSnapshot();
 
     expect(recording.batchCalls).toBe(1);
-    expect(recording.queries).toHaveLength(13);
+    expect(recording.queries).toHaveLength(9);
     expect(recording.queries.every(({ sql }) => /ORDER BY/.test(sql))).toBe(true);
     expect(recording.queries.every(({ bindings }) => bindings.at(-1) === 50_001)).toBe(true);
-    expect(recording.queries[8]!.sql).toContain("status = 'COMMITTED'");
-    expect(recording.queries[9]!.sql).toContain("batch.status = 'COMMITTED'");
+    expect(recording.queries[4]!.sql).toContain("status = 'COMMITTED'");
+    expect(recording.queries[5]!.sql).toContain("batch.status = 'COMMITTED'");
 
     const sql = recording.queries
       .map(({ sql: statement }) => statement)
@@ -253,6 +200,10 @@ describe("full JSON export snapshot repository", () => {
       "idempotency_key",
       "preview_expires_at",
       "mask",
+      "plaid_pfc",
+      "plaid_transaction_id",
+      "transfer_match",
+      "connections",
       "sync_events",
       "sync_runs",
       "connection_requests",
@@ -263,21 +214,16 @@ describe("full JSON export snapshot repository", () => {
     }
     expect(data.transactions[0]).toMatchObject({
       amountMinor: 1234,
+      installment: { count: 3, groupId: "installment-group-1", number: 1 },
       paymentMetadata: {
         payee: "Cafe",
         payer: null,
         paymentMethod: "CARD",
         referenceNumber: "r-1",
       },
-      plaidPersonalFinanceCategory: {
-        confidenceLevel: "HIGH",
-        detailed: "FOOD_AND_DRINK_COFFEE",
-        primary: "FOOD_AND_DRINK",
-      },
-      providerTransactionId: "provider-transaction-1",
     });
+    expect(data.transactions[0]).not.toHaveProperty("accountId");
     expect(JSON.stringify(data)).not.toContain("do-not-export");
-    expect(data.transferMatches[0]!.evidence.reason).toBe(null);
     expect(data.importBatches).toHaveLength(1);
     expect(data.importRows[0]).toMatchObject({ batchId: "import-batch-1", rowNumber: 2 });
     expect(data.subscriptions[0]).toMatchObject({ id: "subscription-1", anchorDay: 17 });
@@ -305,7 +251,7 @@ describe("full JSON export snapshot repository", () => {
     ).rejects.toEqual(new FullJsonExportPersistenceError("ROW_LIMIT_EXCEEDED"));
 
     const invalidSets: unknown[][] = RESULT_SETS.map((rows) => [...rows]);
-    invalidSets[6] = [{ ...RESULT_SETS[6]![0], evidence_json: "not-json" }];
+    invalidSets[2] = [{ ...RESULT_SETS[2]![0], payment_metadata_json: "not-json" }];
     await expect(
       new FullJsonExportRepository(createRecordingDatabase(invalidSets).database).readSnapshot(),
     ).rejects.toEqual(new FullJsonExportPersistenceError("INVALID_STORED_DATA"));

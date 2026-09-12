@@ -5,23 +5,22 @@ const NOW = "2026-07-17T12:00:00.000Z";
 
 function detailTransaction() {
   return {
-    accountId: "account-1",
     accountLabel: "Daily Chequing",
     amountMinor: 14327,
     reimbursementMinor: 0,
     authorizedDate: "2026-07-16",
-    categorizationSource: "PLAID" as const,
+    categorizationSource: "RULE" as const,
     categoryAudits: [
       {
         createdAt: NOW,
         id: "category-audit-1",
         newCategoryId: "category-expense-shopping",
         newCategoryRuleId: null,
-        newSource: "PLAID" as const,
+        newSource: "RULE" as const,
         oldCategoryId: null,
         oldCategoryRuleId: null,
         oldSource: "UNCLASSIFIED" as const,
-        reason: "PLAID_CATEGORIZATION",
+        reason: "RULE_CATEGORIZATION",
       },
     ],
     categoryId: "category-expense-shopping",
@@ -46,7 +45,7 @@ function detailTransaction() {
     },
     postedDate: "2026-07-17",
     reviewReason: "AMBIGUOUS_TRANSFER",
-    source: "PLAID" as const,
+    source: "CSV" as const,
     status: "POSTED" as const,
     updatedAt: NOW,
     version: 1,
@@ -122,7 +121,6 @@ test("opens a generated CSV transaction ID as a detail route", async ({ page }) 
   const transactionId = "csv-import-preview-12345678-1234-1234-1234-123456789abc-2";
   const detail = {
     ...detailTransaction(),
-    accountId: null,
     accountLabel: "RBC Credit",
     categorizationSource: "UNCLASSIFIED" as const,
     categoryAudits: [],
@@ -321,7 +319,7 @@ test("shows traceable raw detail and performs explicit scoped corrections withou
   await expect(page.getByText('<img src=x onerror="alert(1)"> raw bank text')).toBeVisible();
   await expect(page.locator("script").filter({ hasText: "merchant" })).toHaveCount(0);
   await expect(page.locator("img")).toHaveCount(0);
-  await expect(page.getByText("历史银行分类", { exact: true })).toBeVisible();
+  await expect(page.getByText("自动识别商户", { exact: true })).toBeVisible();
   await expect(page.getByText("Shopping", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("OWNER_TRANSACTION_OVERRIDE")).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(

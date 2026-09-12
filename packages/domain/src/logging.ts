@@ -24,8 +24,6 @@ const structuredLogInputSchema = z.object({
   transactionId: internalIdSchema("transaction-").optional(),
 });
 
-export type StructuredLogInput = z.infer<typeof structuredLogInputSchema>;
-
 export interface StructuredLoggerConfig {
   now?: () => Date;
   sink: (serializedLine: string) => void;

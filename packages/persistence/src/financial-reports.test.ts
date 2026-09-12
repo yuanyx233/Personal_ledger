@@ -98,7 +98,6 @@ const ROWS = [
 
 const SPENDING_ROWS = [
   {
-    account_id: "account-1",
     amount_minor: 12_000,
     category_id: "category-food",
     category_kind: "EXPENSE",
@@ -111,7 +110,6 @@ const SPENDING_ROWS = [
     posted_date: "2026-01-04",
   },
   {
-    account_id: "account-1",
     amount_minor: 2_000,
     category_id: "category-food",
     category_kind: "EXPENSE",
@@ -124,7 +122,6 @@ const SPENDING_ROWS = [
     posted_date: "2026-01-05",
   },
   {
-    account_id: "account-1",
     amount_minor: 3_000,
     category_id: "category-transit",
     category_kind: "EXPENSE",
@@ -137,7 +134,6 @@ const SPENDING_ROWS = [
     posted_date: "2026-01-06",
   },
   {
-    account_id: "account-1",
     amount_minor: 500_000,
     category_id: "category-income",
     category_kind: "INCOME",
@@ -216,16 +212,8 @@ describe("FinancialReportRepository", () => {
     expect(recording.queries[0]!.bindings).toEqual(["2026-01-01", "2026-01-31"]);
     expect(recording.queries[0]!.sql).toContain("transactions.status = 'POSTED'");
     expect(recording.queries[0]!.sql).toContain("transactions.posted_date BETWEEN ? AND ?");
-    expect(recording.queries[0]!.sql).toContain(
-      "left_match.status IN ('AUTO_CONFIRMED', 'CONFIRMED')",
-    );
-    expect(recording.queries[0]!.sql).toContain("left_match.left_transaction_id = transactions.id");
-    expect(recording.queries[0]!.sql).toContain(
-      "right_match.status IN ('AUTO_CONFIRMED', 'CONFIRMED')",
-    );
-    expect(recording.queries[0]!.sql).toContain(
-      "right_match.right_transaction_id = transactions.id",
-    );
+    expect(recording.queries[0]!.sql).toContain("LEFT JOIN accounts AS transaction_account");
+    expect(recording.queries[0]!.sql).not.toContain("transfer_matches");
     expect(recording.queries[0]!.sql).not.toContain("2026-01-01");
     expect(result.period).toMatchObject({
       dateFrom: "2026-01-01",
@@ -342,33 +330,9 @@ describe("FinancialReportRepository", () => {
 
     expect(recording.queries).toHaveLength(3);
     expect(recording.queries.map(({ bindings }) => bindings)).toEqual([
-      [
-        "2026-01-01",
-        "2026-01-31",
-        "account-1",
-        "account-1",
-        "category-food",
-        "USD",
-        normalizedMerchant,
-      ],
-      [
-        "2025-12-01",
-        "2025-12-31",
-        "account-1",
-        "account-1",
-        "category-food",
-        "USD",
-        normalizedMerchant,
-      ],
-      [
-        "2025-01-01",
-        "2025-01-31",
-        "account-1",
-        "account-1",
-        "category-food",
-        "USD",
-        normalizedMerchant,
-      ],
+      ["2026-01-01", "2026-01-31", "account-1", "category-food", "USD", normalizedMerchant],
+      ["2025-12-01", "2025-12-31", "account-1", "category-food", "USD", normalizedMerchant],
+      ["2025-01-01", "2025-01-31", "account-1", "category-food", "USD", normalizedMerchant],
     ]);
     for (const query of recording.queries) {
       expect(query.sql).not.toContain(normalizedMerchant);
@@ -473,7 +437,6 @@ describe("FinancialReportRepository", () => {
     expect(recording.queries[0]!.bindings).toEqual([
       "2026-01-01",
       "2026-01-31",
-      "account-1",
       "account-1",
       "category-food",
       "CAD",

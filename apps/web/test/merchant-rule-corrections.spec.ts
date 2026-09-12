@@ -53,34 +53,11 @@ beforeAll(async () => {
 beforeEach(async () => {
   await clearCategoryAudits(cloudflareEnv.DB);
   await cloudflareEnv.DB.batch(
-    [
-      "transactions",
-      "merchant_rules",
-      "categories WHERE system_key IS NULL",
-      "accounts",
-      "connections",
-    ].map((table) => cloudflareEnv.DB.prepare(`DELETE FROM ${table}`)),
+    ["transactions", "merchant_rules", "categories WHERE system_key IS NULL"].map((table) =>
+      cloudflareEnv.DB.prepare(`DELETE FROM ${table}`),
+    ),
   );
   await cloudflareEnv.DB.batch([
-    cloudflareEnv.DB.prepare(
-      `INSERT INTO connections (
-        id, institution_id, institution_name, plaid_item_id,
-        access_token_ciphertext, access_token_iv, token_key_version, sync_cursor,
-        status, created_at, updated_at, version
-      ) VALUES (
-        'connection-1', 'ins_42', 'Fixture Bank', 'plaid-item-1',
-        X'0102', X'0304', 1, 'cursor-1', 'SYNCING', ?, ?, 1
-      )`,
-    ).bind(NOW, NOW),
-    cloudflareEnv.DB.prepare(
-      `INSERT INTO accounts (
-        id, connection_id, plaid_account_id, display_name, type, subtype,
-        currency, enabled, created_at, updated_at, version
-      ) VALUES (
-        'account-1', 'connection-1', 'plaid-account-1', 'Daily Chequing',
-        'DEPOSITORY', 'CHECKING', 'CAD', 1, ?, ?, 1
-      )`,
-    ).bind(NOW, NOW),
     ...[
       ["category-old", "Old category", 1],
       ["category-new", "New category", 1],
@@ -96,42 +73,55 @@ beforeEach(async () => {
 
   const transaction = (
     id: string,
-    plaidId: string,
+    fingerprintSeed: string,
     merchantName: string | null,
     normalizedMerchant: string | null,
   ) =>
     cloudflareEnv.DB.prepare(
       `INSERT INTO transactions (
-        id, source, account_id, plaid_transaction_id, status, posted_date,
+        id, source, account_label, import_fingerprint, status, posted_date,
         amount_minor, direction, currency, raw_description, merchant_name,
         category_id, categorization_source, normalized_merchant, needs_review,
         review_reason, created_at, updated_at, version
       ) VALUES (
-        ?, 'PLAID', 'account-1', ?, 'POSTED', '2026-07-15', 1234, 'OUTFLOW',
-        'CAD', ?, ?, 'category-old', 'PLAID', ?, 1, 'RULE_CONFLICT', ?, ?, 1
+        ?, 'CSV', 'Daily Chequing', ?, 'POSTED', '2026-07-15', 1234, 'OUTFLOW',
+        'CAD', ?, ?, 'category-old', 'MANUAL', ?, 1, 'RULE_CONFLICT', ?, ?, 1
       )`,
-    ).bind(id, plaidId, merchantName ?? "No merchant", merchantName, normalizedMerchant, NOW, NOW);
+    ).bind(
+      id,
+      fingerprintSeed,
+      merchantName ?? "No merchant",
+      merchantName,
+      normalizedMerchant,
+      NOW,
+      NOW,
+    );
 
   await cloudflareEnv.DB.batch([
     transaction(
       "transaction-rule-current",
-      "plaid-rule-current",
+      "1111111111111111111111111111111111111111111111111111111111111111",
       "Neighbourhood Market Store 42",
       "neighbourhood market",
     ),
     transaction(
       "transaction-rule-history",
-      "plaid-rule-history",
+      "2222222222222222222222222222222222222222222222222222222222222222",
       "NEIGHBOURHOOD MARKET",
       "neighbourhood market",
     ),
     transaction(
       "transaction-rule-similar",
-      "plaid-rule-similar",
+      "3333333333333333333333333333333333333333333333333333333333333333",
       "Neighbourhood Markets",
       "neighbourhood markets",
     ),
-    transaction("transaction-rule-no-merchant", "plaid-rule-no-merchant", null, null),
+    transaction(
+      "transaction-rule-no-merchant",
+      "4444444444444444444444444444444444444444444444444444444444444444",
+      null,
+      null,
+    ),
   ]);
 });
 
@@ -168,14 +158,14 @@ describe("future exact merchant-rule correction", () => {
     ).all();
     expect(historical.results).toEqual([
       {
-        categorization_source: "PLAID",
+        categorization_source: "MANUAL",
         category_id: "category-old",
         category_rule_id: null,
         id: "transaction-rule-history",
         version: 1,
       },
       {
-        categorization_source: "PLAID",
+        categorization_source: "MANUAL",
         category_id: "category-old",
         category_rule_id: null,
         id: "transaction-rule-similar",
@@ -194,24 +184,36 @@ describe("future exact merchant-rule correction", () => {
       new_source: "RULE",
       old_category_id: "category-old",
       old_category_rule_id: null,
-      old_source: "PLAID",
+      old_source: "MANUAL",
       reason: "RULE_CATEGORIZATION",
     });
 
-    for (const [id, description] of [
-      ["future-exact", "  NEIGHBOURHOOD   MARKET Store 99 "],
-      ["future-similar", "Neighbourhood Markets"],
-    ]) {
-      await new ManualTransactionRepository(cloudflareEnv.DB, { createId: () => id! }).create({
+    await expect(
+      new ManualTransactionRepository(cloudflareEnv.DB, {
+        createId: () => "future-exact",
+      }).create({
         accountLabel: "Wallet",
         amountMinor: 1234,
         currency: "CAD",
-        description,
+        description: "  NEIGHBOURHOOD   MARKET Store 99 ",
         direction: "OUTFLOW",
         postedDate: "2026-07-16",
         now: NOW,
-      });
-    }
+      }),
+    ).resolves.toMatchObject({ kind: "CREATED" });
+    await expect(
+      new ManualTransactionRepository(cloudflareEnv.DB, {
+        createId: () => "future-similar",
+      }).create({
+        accountLabel: "Wallet",
+        amountMinor: 1234,
+        currency: "CAD",
+        description: "Neighbourhood Markets",
+        direction: "OUTFLOW",
+        postedDate: "2026-07-16",
+        now: NOW,
+      }),
+    ).resolves.toEqual({ kind: "CATEGORY_CONFIRMATION_REQUIRED" });
     const future = await cloudflareEnv.DB.prepare(
       `SELECT id, categorization_source, category_id, category_rule_id
        FROM transactions WHERE id LIKE 'future-%'
@@ -223,12 +225,6 @@ describe("future exact merchant-rule correction", () => {
         category_id: "category-new",
         category_rule_id: body.data.merchantRule.id,
         id: "future-exact",
-      },
-      {
-        categorization_source: "UNCLASSIFIED",
-        category_id: "category-system-unclassified",
-        category_rule_id: null,
-        id: "future-similar",
       },
     ]);
   });
@@ -263,7 +259,7 @@ describe("future exact merchant-rule correction", () => {
          FROM transactions WHERE id = 'transaction-rule-history'`,
       ).first(),
     ).resolves.toEqual({
-      categorization_source: "PLAID",
+      categorization_source: "MANUAL",
       category_id: "category-old",
       version: 1,
     });

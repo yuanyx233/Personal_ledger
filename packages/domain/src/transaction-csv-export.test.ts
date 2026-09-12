@@ -11,7 +11,6 @@ import {
 } from "./transaction-csv-export";
 
 const ROW: TransactionCsvRow = {
-  accountId: "account-1",
   accountLabel: "Daily Chequing",
   amountMinor: 1234,
   authorizedDate: "2026-01-14",
@@ -29,12 +28,9 @@ const ROW: TransactionCsvRow = {
   merchantName: "Fixture Cafe",
   needsReview: false,
   normalizedMerchant: "fixture cafe",
-  plaidPfcConfidence: "HIGH",
-  plaidPfcDetailed: "FOOD_AND_DRINK_COFFEE",
-  plaidPfcPrimary: "FOOD_AND_DRINK",
   postedDate: "2026-01-15",
   reviewReason: null,
-  source: "PLAID",
+  source: "CSV",
   status: "POSTED",
   subscriptionId: "subscription-1",
   subscriptionScheduledDate: "2026-01-15",
@@ -58,7 +54,6 @@ describe("transaction CSV export", () => {
       "amount_minor",
       "amount",
       "currency",
-      "account_id",
       "account",
       "description",
       "merchant",
@@ -68,9 +63,6 @@ describe("transaction CSV export", () => {
       "categorization_source",
       "category_rule_id",
       "category_rule_merchant",
-      "plaid_pfc_primary",
-      "plaid_pfc_detailed",
-      "plaid_pfc_confidence",
       "source",
       "needs_review",
       "review_reason",
@@ -84,8 +76,8 @@ describe("transaction CSV export", () => {
     expect(serializeTransactionCsv([ROW])).toBe(
       `${TRANSACTION_CSV_HEADERS.join(",")}\r\n` +
         "transaction-1,2026-01-15,2026-01-14,POSTED,OUTFLOW,1234,12.34,CAD," +
-        "account-1,Daily Chequing,Coffee,Fixture Cafe,fixture cafe,category-food,Food," +
-        "RULE,rule-1,Fixture Cafe,FOOD_AND_DRINK,FOOD_AND_DRINK_COFFEE,HIGH,PLAID,false,," +
+        "Daily Chequing,Coffee,Fixture Cafe,fixture cafe,category-food,Food," +
+        "RULE,rule-1,Fixture Cafe,CSV,false,," +
         "subscription-1,2026-01-15,AUTO_MERGED,1,0,1234\r\n",
     );
 

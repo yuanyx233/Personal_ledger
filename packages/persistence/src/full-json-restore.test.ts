@@ -27,8 +27,7 @@ function transaction(
     Pick<FullJsonExport["data"]["transactions"][number], "id">,
 ): FullJsonExport["data"]["transactions"][number] {
   return {
-    accountId: "account-chequing",
-    accountLabel: null,
+    accountLabel: "Daily Chequing",
     amountMinor: 1234,
     reimbursementMinor: 0,
     authorizedDate: null,
@@ -45,47 +44,20 @@ function transaction(
     normalizedMerchant: null,
     paymentMetadata: PAYMENT_METADATA,
     pendingTransactionId: null,
-    plaidPersonalFinanceCategory: null,
     postedDate: "2026-07-17",
-    providerTransactionId: null,
     reviewReason: null,
     source: "MANUAL",
     status: "POSTED",
     updatedAt: NOW,
     version: 1,
     ...input,
+    installment: input.installment ?? null,
   };
 }
 
 function fixture(): FullJsonExport {
   return createFullJsonExport({
     data: {
-      accounts: [
-        {
-          connectionId: "connection-1",
-          createdAt: NOW,
-          currency: "CAD",
-          displayName: "Daily Chequing",
-          enabled: true,
-          id: "account-chequing",
-          subtype: "CHECKING",
-          type: "DEPOSITORY",
-          updatedAt: NOW,
-          version: 1,
-        },
-        {
-          connectionId: "connection-1",
-          createdAt: NOW,
-          currency: "CAD",
-          displayName: "Credit Card",
-          enabled: true,
-          id: "account-credit",
-          subtype: "CREDIT_CARD",
-          type: "CREDIT",
-          updatedAt: NOW,
-          version: 1,
-        },
-      ],
       categories: [
         {
           active: true,
@@ -146,16 +118,7 @@ function fixture(): FullJsonExport {
           transactionId: "transaction-expense",
         },
       ],
-      connections: [
-        {
-          createdAt: NOW,
-          id: "connection-1",
-          institutionId: "ins_fixture",
-          institutionName: "Fixture Bank",
-          updatedAt: NOW,
-          version: 2,
-        },
-      ],
+      budgets: [],
       importBatches: [
         {
           committedAt: NOW,
@@ -184,6 +147,9 @@ function fixture(): FullJsonExport {
             merchant: null,
             postedDate: "2026-07-17",
           },
+          matchEvidence: null,
+          resolution: "IMPORTED_NEW",
+          resolvedAt: NOW,
           rowNumber: 2,
           transactionId: "transaction-transfer-right",
           validationStatus: "IMPORTED",
@@ -235,19 +201,15 @@ function fixture(): FullJsonExport {
           id: "transaction-expense",
           merchantName: "Fixture Cafe",
           normalizedMerchant: "fixture cafe",
-          providerTransactionId: "provider-transaction-1",
-          source: "PLAID",
         }),
         transaction({
           amountMinor: 2_000,
           categoryId: "category-system-transfer",
           direction: "OUTFLOW",
           id: "transaction-transfer-left",
-          providerTransactionId: "provider-transfer-left",
-          source: "PLAID",
         }),
         transaction({
-          accountId: "account-credit",
+          accountLabel: "Credit Card",
           amountMinor: 2_000,
           categoryId: "category-system-transfer",
           direction: "INFLOW",
@@ -258,17 +220,12 @@ function fixture(): FullJsonExport {
         transaction({
           id: "transaction-posted-replacement",
           pendingTransactionId: "transaction-pending",
-          providerTransactionId: "provider-posted",
-          source: "PLAID",
         }),
         transaction({
           id: "transaction-pending",
-          providerTransactionId: "provider-pending",
-          source: "PLAID",
           status: "PENDING",
         }),
         transaction({
-          accountId: null,
           accountLabel: "RBC Credit",
           amountMinor: 1149,
           categoryId: "category-expense",
@@ -290,38 +247,6 @@ function fixture(): FullJsonExport {
           status: "NOT_CHARGED",
           subscriptionId: "subscription-apple",
           transactionId: "transaction-subscription-not-charged",
-          updatedAt: NOW,
-          version: 2,
-        },
-      ],
-      transferMatchAudits: [
-        {
-          action: "CONFIRM",
-          createdAt: NOW,
-          id: "transfer-audit-1",
-          matchVersion: 2,
-          newStatus: "CONFIRMED",
-          oldStatus: "AUTO_CONFIRMED",
-          reason: "OWNER_CONFIRMED",
-          transferMatchId: "transfer-match-1",
-        },
-      ],
-      transferMatches: [
-        {
-          confidence: "HIGH",
-          createdAt: NOW,
-          decisionReason: "OWNER_CONFIRMED",
-          evidence: {
-            amountMinor: 2_000,
-            currency: "CAD",
-            dayDifference: 0,
-            reason: null,
-            signals: ["DESCRIPTION"],
-          },
-          id: "transfer-match-1",
-          leftTransactionId: "transaction-transfer-left",
-          rightTransactionId: "transaction-transfer-right",
-          status: "CONFIRMED",
           updatedAt: NOW,
           version: 2,
         },
@@ -378,12 +303,78 @@ describe("full JSON local restore", () => {
     entry.reimbursementMinor = entry.amountMinor + 1;
     expect(() => createFullJsonRestoreSql(document)).toThrow();
   });
+
+  it("preserves installment identity and defaults older transactions to no installment", () => {
+    const document = fixture();
+    const oldBackup = JSON.parse(JSON.stringify(document)) as typeof document;
+    Reflect.deleteProperty(oldBackup.data.transactions[0]!, "installment");
+    expect(() => createFullJsonRestoreSql(oldBackup)).not.toThrow();
+
+    const entry = document.data.transactions.find(({ source }) => source === "MANUAL")!;
+    entry.installment = { count: 3, groupId: "installment-group-1", number: 1 };
+    document.data.transactions.push(
+      transaction({
+        id: "transaction-installment-2",
+        installment: { count: 3, groupId: "installment-group-1", number: 2 },
+      }),
+      transaction({
+        id: "transaction-installment-3",
+        installment: { count: 3, groupId: "installment-group-1", number: 3 },
+      }),
+    );
+    document.recordCounts.transactions += 2;
+
+    const sql = createFullJsonRestoreSql(document);
+    expect(sql).toContain("installment_group_id");
+    expect(sql).toContain("installment_number");
+    expect(sql).toContain("installment_count");
+    expect(sql).toContain(hex("installment-group-1"));
+  });
+
+  it("restores legacy Plaid transactions without exporting removed provider fields", () => {
+    const document = fixture();
+    Object.assign(document.data.transactions[0]!, {
+      accountLabel: "Legacy Savings",
+      categorizationSource: "PLAID",
+      source: "PLAID",
+    });
+
+    const sql = createFullJsonRestoreSql(document);
+    expect(sql).toContain(hex("restored:transaction-income"));
+    expect(sql).toContain(hex("Legacy Savings"));
+    expect(sql).toContain("plaid_transaction_id");
+  });
+
+  it("rejects incomplete or inconsistent installment groups", () => {
+    const incomplete = fixture();
+    incomplete.data.transactions[0]!.installment = {
+      count: 3,
+      groupId: "installment-incomplete",
+      number: 1,
+    };
+    expect(() => createFullJsonRestoreSql(incomplete)).toThrow(
+      new FullJsonRestoreError("INVALID_INSTALLMENT_GROUP"),
+    );
+
+    const inconsistent = fixture();
+    inconsistent.data.transactions[0]!.installment = {
+      count: 2,
+      groupId: "installment-inconsistent",
+      number: 1,
+    };
+    inconsistent.data.transactions[1]!.installment = {
+      count: 3,
+      groupId: "installment-inconsistent",
+      number: 2,
+    };
+    expect(() => createFullJsonRestoreSql(inconsistent)).toThrow(
+      new FullJsonRestoreError("INVALID_INSTALLMENT_GROUP"),
+    );
+  });
   it("generates allowlisted D1 SQL with hex-encoded input and dependency-safe ordering", () => {
     const sql = createFullJsonRestoreSql(fixture());
 
     expect(sql).toContain("DELETE FROM categories WHERE system_key IS NULL");
-    expect(sql).toContain("restored-local-item:");
-    expect(sql).toContain("restored-local-account:");
     expect(sql).toContain("restored-local-import:");
     expect(sql).toContain("subscription_occurrences");
     expect(sql.indexOf("INSERT INTO subscriptions")).toBeLessThan(
@@ -392,7 +383,6 @@ describe("full JSON local restore", () => {
     expect(sql.indexOf("INSERT INTO transactions")).toBeLessThan(
       sql.indexOf("INSERT INTO subscription_occurrences"),
     );
-    expect(sql).toContain("'DISCONNECTED'");
     expect(sql).not.toContain("DROP TABLE transactions");
     expect(sql).not.toContain("Fixture Cafe");
     expect(sql).not.toContain("BEGIN");
@@ -404,20 +394,21 @@ describe("full JSON local restore", () => {
 
   it("rejects duplicate ids, dangling relations, invalid source identity, and pending cycles", () => {
     const duplicate = fixture();
-    duplicate.data.accounts.push({ ...duplicate.data.accounts[0]! });
-    duplicate.recordCounts.accounts += 1;
+    duplicate.data.merchantRules.push({ ...duplicate.data.merchantRules[0]! });
+    duplicate.recordCounts.merchantRules += 1;
     expect(() => createFullJsonRestoreSql(duplicate)).toThrow(
       new FullJsonRestoreError("DUPLICATE_ID"),
     );
 
     const dangling = fixture();
-    dangling.data.accounts[0]!.connectionId = "missing-connection";
+    dangling.data.merchantRules[0]!.categoryId = "missing-category";
     expect(() => createFullJsonRestoreSql(dangling)).toThrow(
       new FullJsonRestoreError("DANGLING_RELATIONSHIP"),
     );
 
     const source = fixture();
-    source.data.transactions[0]!.source = "PLAID";
+    const csvRow = source.data.transactions.find(({ id }) => id === "transaction-transfer-right")!;
+    csvRow.importFingerprint = null;
     expect(() => createFullJsonRestoreSql(source)).toThrow(
       new FullJsonRestoreError("INVALID_SOURCE_IDENTITY"),
     );
@@ -496,10 +487,7 @@ describe("full JSON local restore", () => {
     const nonManual = fixture();
     Object.assign(
       nonManual.data.transactions.find(({ id }) => id === "transaction-subscription-not-charged")!,
-      {
-        providerTransactionId: "provider-subscription-history",
-        source: "PLAID",
-      },
+      { importFingerprint: "d".repeat(64), source: "CSV" },
     );
     expect(() => createFullJsonRestoreSql(nonManual)).toThrow(
       new FullJsonRestoreError("DANGLING_RELATIONSHIP"),
@@ -523,8 +511,6 @@ describe("full JSON local restore", () => {
       subscriptionOccurrences: 1,
       subscriptions: 1,
       transactions: 7,
-      transferMatchAudits: 1,
-      transferMatches: 1,
     });
     expect(expected.reportTotals).toEqual([
       {

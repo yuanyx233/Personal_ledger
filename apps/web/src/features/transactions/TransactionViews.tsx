@@ -4,7 +4,7 @@ import { formatMoney } from "../overview/overview-data";
 
 type Transaction = TransactionListResponse["data"]["transactions"][number];
 
-const SOURCE_LABELS = { CSV: "CSV", MANUAL: "手工", PLAID: "历史银行记录" } as const;
+const SOURCE_LABELS = { CSV: "CSV", MANUAL: "手工", PLAID: "历史银行导入" } as const;
 const STATUS_LABELS = { PENDING: "待入账", POSTED: "已入账", REMOVED: "已移除" } as const;
 const CATEGORY_LABELS = {
   MANUAL: "人工分类",
@@ -28,6 +28,9 @@ function Badges({ transaction }: { transaction: Transaction }) {
       <span>{SOURCE_LABELS[transaction.source]}</span>
       <span>{STATUS_LABELS[transaction.status]}</span>
       <span>{CATEGORY_LABELS[transaction.categorizationSource]}</span>
+      {transaction.installment ? (
+        <span>{`第 ${transaction.installment.number}/${transaction.installment.count} 期`}</span>
+      ) : null}
       {transaction.reimbursementMinor > 0 ? (
         <span>
           {transaction.direction === "OUTFLOW" ? "个人消费" : "扣除回款后"}{" "}

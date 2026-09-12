@@ -68,16 +68,6 @@ export type CategoryCreateResult =
   | { category: CategoryRecord; kind: "CREATED" }
   | { category: CategoryRecord; kind: "NAME_CONFLICT" };
 
-export interface CategorySuggestion {
-  category: CategoryRecord;
-  reason: "POPULAR_EXPENSE" | "RECENT_MERCHANT";
-}
-
-export interface CategorySuggestionResult {
-  suggestions: CategorySuggestion[];
-  transactionId: string;
-}
-
 export type MerchantCategoryPreview = {
   category: CategoryRecord;
   kind: "KNOWN_MERCHANT" | "NEW_MERCHANT";
@@ -116,6 +106,7 @@ export class CategoryRepository {
 
   async previewMerchant(input: {
     description: string;
+    ignoreExactRule?: boolean;
     preferredCategoryId: string | null;
   }): Promise<MerchantCategoryPreview | null> {
     const normalizedMerchant = normalizeMerchantName(input.description);
@@ -126,19 +117,21 @@ export class CategoryRepository {
       throw new TypeError("Invalid merchant preview query.");
     }
 
-    const exact = await this.database
-      .prepare(
-        `SELECT category.id, category.name, category.kind, category.system_key,
-                category.editable, category.active, category.created_at,
-                category.updated_at, category.version
-         FROM merchant_rules AS merchant_rule
-         JOIN categories AS category
-           ON category.id = merchant_rule.category_id AND category.active = 1
-         WHERE merchant_rule.normalized_merchant = ? AND merchant_rule.active = 1`,
-      )
-      .bind(normalizedMerchant)
-      .first<CategoryRow>();
-    if (exact) return { category: toCategoryRecord(exact), kind: "KNOWN_MERCHANT" };
+    if (input.ignoreExactRule !== true) {
+      const exact = await this.database
+        .prepare(
+          `SELECT category.id, category.name, category.kind, category.system_key,
+                  category.editable, category.active, category.created_at,
+                  category.updated_at, category.version
+           FROM merchant_rules AS merchant_rule
+           JOIN categories AS category
+             ON category.id = merchant_rule.category_id AND category.active = 1
+           WHERE merchant_rule.normalized_merchant = ? AND merchant_rule.active = 1`,
+        )
+        .bind(normalizedMerchant)
+        .first<CategoryRow>();
+      if (exact) return { category: toCategoryRecord(exact), kind: "KNOWN_MERCHANT" };
+    }
 
     const suggested = await this.database
       .prepare(
@@ -210,56 +203,5 @@ export class CategoryRepository {
       if (raced) return { category: raced, kind: "NAME_CONFLICT" };
       throw error;
     }
-  }
-
-  async suggestForTransaction(
-    transactionId: string,
-    limit = 2,
-  ): Promise<CategorySuggestionResult | null> {
-    if (!/^.{1,160}$/u.test(transactionId) || !Number.isInteger(limit) || limit < 1 || limit > 2) {
-      throw new TypeError("Invalid category suggestion query.");
-    }
-    const target = await this.database
-      .prepare(
-        `SELECT normalized_merchant
-         FROM transactions
-         WHERE id = ? AND status != 'REMOVED'`,
-      )
-      .bind(transactionId)
-      .first<{ normalized_merchant: string | null }>();
-    if (!target) return null;
-
-    const rows = await this.database
-      .prepare(
-        `SELECT category.id, category.name, category.kind, category.system_key,
-                category.editable, category.active, category.created_at,
-                category.updated_at, category.version,
-                SUM(CASE
-                  WHEN ledger_transaction.normalized_merchant = ?
-                   AND ledger_transaction.categorization_source IN ('MANUAL', 'RULE')
-                   AND ledger_transaction.status = 'POSTED'
-                  THEN 1 ELSE 0 END) AS merchant_match_count,
-                COUNT(ledger_transaction.id) AS usage_count
-         FROM categories AS category
-         LEFT JOIN transactions AS ledger_transaction
-           ON ledger_transaction.category_id = category.id
-          AND ledger_transaction.status = 'POSTED'
-         WHERE category.kind = 'EXPENSE'
-           AND category.editable = 1
-           AND category.active = 1
-         GROUP BY category.id
-         ORDER BY merchant_match_count DESC, usage_count DESC, category.name ASC, category.id ASC
-         LIMIT ?`,
-      )
-      .bind(target.normalized_merchant ?? "", limit)
-      .all<CategorySuggestionRow>();
-
-    return {
-      suggestions: rows.results.map((row) => ({
-        category: toCategoryRecord(row),
-        reason: row.merchant_match_count > 0 ? "RECENT_MERCHANT" : "POPULAR_EXPENSE",
-      })),
-      transactionId,
-    };
   }
 }

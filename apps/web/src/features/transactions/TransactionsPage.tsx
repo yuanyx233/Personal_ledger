@@ -64,7 +64,6 @@ export function TransactionsPage({ online, route }: { online: boolean; route: Ap
           来源
           <select defaultValue={search.get("source") ?? ""} name="source">
             <option value="">全部</option>
-            <option value="PLAID">历史银行记录</option>
             <option value="MANUAL">手工</option>
             <option value="CSV">CSV</option>
           </select>
@@ -78,7 +77,6 @@ export function TransactionsPage({ online, route }: { online: boolean; route: Ap
             <option value="">全部</option>
             <option value="MANUAL">人工</option>
             <option value="RULE">规则</option>
-            <option value="PLAID">Plaid</option>
             <option value="UNCLASSIFIED">未分类</option>
           </select>
         </label>

@@ -20,6 +20,7 @@ import {
   decodeCsvBase64,
   mergeCashFlowCurrencySections,
   manualDefaultCategory,
+  merchantRequiresCategoryConfirmation,
   normalizeMerchantName,
   parseCsvPreview,
   parseCashFlowReportQuery,
@@ -230,6 +231,18 @@ function categoryNameConflict(): Response {
   );
 }
 
+function merchantCategoryConfirmationRequired(): Response {
+  return Response.json(
+    {
+      error: {
+        code: "CONFLICT",
+        message: "Confirm a category for this merchant before recording the transaction.",
+      },
+    },
+    { status: 409 },
+  );
+}
+
 function requestLimitDenied(error: RequestLimitError): Response {
   return Response.json(
     {
@@ -369,6 +382,7 @@ function manualTransactionReadModel(transaction: ManualTransactionRecord) {
     description: transaction.rawDescription,
     direction: transaction.direction,
     id: transaction.id,
+    installment: transaction.installment,
     merchantName,
     normalizedMerchant,
     postedDate: transaction.postedDate,
@@ -381,7 +395,6 @@ function manualTransactionReadModel(transaction: ManualTransactionRecord) {
 
 function transactionReadModel(transaction: TransactionRecord) {
   return {
-    accountId: transaction.accountId,
     accountLabel: transaction.accountLabel,
     amountMinor: transaction.amountMinor,
     reimbursementMinor: transaction.reimbursementMinor,
@@ -394,6 +407,7 @@ function transactionReadModel(transaction: TransactionRecord) {
     description: transaction.rawDescription,
     direction: transaction.direction,
     id: transaction.id,
+    installment: transaction.installment,
     merchantName: transaction.merchantName,
     needsReview: transaction.needsReview,
     normalizedMerchant: transaction.normalizedMerchant,
@@ -409,7 +423,6 @@ function transactionReadModel(transaction: TransactionRecord) {
 
 function transactionCsvRow(transaction: TransactionCsvExportRecord): TransactionCsvRow {
   return {
-    accountId: transaction.accountId,
     accountLabel: transaction.accountLabel,
     amountMinor: transaction.amountMinor,
     reimbursementMinor: transaction.reimbursementMinor,
@@ -428,9 +441,6 @@ function transactionCsvRow(transaction: TransactionCsvExportRecord): Transaction
     merchantName: transaction.merchantName,
     needsReview: transaction.needsReview,
     normalizedMerchant: transaction.normalizedMerchant,
-    plaidPfcConfidence: transaction.plaidPersonalFinanceCategory?.confidenceLevel ?? null,
-    plaidPfcDetailed: transaction.plaidPersonalFinanceCategory?.detailed ?? null,
-    plaidPfcPrimary: transaction.plaidPersonalFinanceCategory?.primary ?? null,
     postedDate: transaction.postedDate,
     reviewReason: transaction.reviewReason,
     source: transaction.source,
@@ -598,7 +608,13 @@ export function createAppWorker(
           if (request.method !== "GET") return secure(methodNotAllowed());
           try {
             const { results: accounts } = await env.DB.prepare(
-              "SELECT id, display_name AS displayName FROM accounts UNION SELECT DISTINCT account_label AS id, account_label AS displayName FROM transactions WHERE account_label IS NOT NULL ORDER BY displayName",
+              `SELECT DISTINCT
+                 COALESCE(ledger_transaction.account_label, account.display_name) AS id,
+                 COALESCE(ledger_transaction.account_label, account.display_name) AS displayName
+               FROM transactions AS ledger_transaction
+               LEFT JOIN accounts AS account ON account.id = ledger_transaction.account_id
+               WHERE COALESCE(ledger_transaction.account_label, account.display_name) IS NOT NULL
+               ORDER BY displayName`,
             ).all<{ id: string; displayName: string }>();
             return secure(Response.json({ data: { accounts }, meta: {} }));
           } catch {
@@ -1148,6 +1164,7 @@ export function createAppWorker(
           try {
             const result = await new CategoryRepository(env.DB).previewMerchant({
               description: parsedBody.data.description,
+              ignoreExactRule: merchantRequiresCategoryConfirmation(parsedBody.data.description),
               preferredCategoryId: manualDefaultCategory(parsedBody.data.description),
             });
             if (!result) throw new Error("No active expense category is available.");
@@ -1179,6 +1196,13 @@ export function createAppWorker(
             return secure(requestLimitDenied(error));
           }
 
+          if (
+            parsedBody.data.categoryId === undefined &&
+            merchantRequiresCategoryConfirmation(parsedBody.data.description)
+          ) {
+            return secure(merchantCategoryConfirmationRequired());
+          }
+
           try {
             const result = await new ManualTransactionRepository(env.DB).create({
               accountLabel: parsedBody.data.accountLabel,
@@ -1197,12 +1221,16 @@ export function createAppWorker(
               currency: parsedBody.data.currency,
               description: parsedBody.data.description,
               direction: parsedBody.data.direction,
+              installmentCount: parsedBody.data.installmentCount,
               now: now().toISOString(),
               postedDate: parsedBody.data.postedDate,
               ...(parsedBody.data.rememberMerchant === true ? { rememberMerchant: true } : {}),
             });
             if (result.kind === "CATEGORY_NOT_FOUND") {
               return secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
+            }
+            if (result.kind === "CATEGORY_CONFIRMATION_REQUIRED") {
+              return secure(merchantCategoryConfirmationRequired());
             }
             const transactionId = transactionIdSchema.safeParse(result.transaction.id);
             if (!transactionId.success) {
@@ -1214,6 +1242,9 @@ export function createAppWorker(
                   categoryConfirmationRequired:
                     result.transaction.categorizationSource === "UNCLASSIFIED",
                   transaction: manualTransactionReadModel(result.transaction),
+                  ...(result.transactions
+                    ? { transactions: result.transactions.map(manualTransactionReadModel) }
+                    : {}),
                 },
                 meta: {},
               },
@@ -1241,34 +1272,6 @@ export function createAppWorker(
         }
         if (url.pathname === `${API_PREFIX}/transactions` && request.method !== "GET") {
           return secure(methodNotAllowed());
-        }
-        const categorySuggestionsPath = new RegExp(
-          `^${API_PREFIX}/transactions/([^/]+)/category-suggestions$`,
-        ).exec(url.pathname);
-        if (categorySuggestionsPath) {
-          if (request.method !== "GET") return secure(methodNotAllowed());
-          const parsedTransactionId = transactionIdSchema.safeParse(categorySuggestionsPath[1]);
-          if (!parsedTransactionId.success) {
-            return secure(requestLimitDenied(new RequestLimitError("VALIDATION_ERROR", 422)));
-          }
-          try {
-            const result = await new CategoryRepository(env.DB).suggestForTransaction(
-              parsedTransactionId.data,
-              2,
-            );
-            if (!result) return secure(notFound());
-            return secure(Response.json({ data: result, meta: {} }));
-          } catch {
-            logger.write({
-              errorCode: "INTERNAL_ERROR",
-              event: "API_REQUEST",
-              level: "ERROR",
-              outcome: "FAILED",
-              status: 500,
-              transactionId: parsedTransactionId.data,
-            });
-            return secure(internalError());
-          }
         }
         const merchantRuleCorrectionPath = new RegExp(
           `^${API_PREFIX}/transactions/([^/]+)/merchant-rule$`,

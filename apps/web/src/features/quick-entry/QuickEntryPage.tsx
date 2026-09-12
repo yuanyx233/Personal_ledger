@@ -3,12 +3,14 @@ import {
   manualTransactionPreviewResponseSchema,
   type ManualTransactionPreviewResponse,
 } from "@ledger/domain/api-contracts";
+import { merchantRequiresCategoryConfirmation, reportMerchantFamily } from "@ledger/domain";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import type { AppRoute } from "../../app-routes";
 import { DataState } from "../../components/DataState/DataState";
 import { BrowserApiError, writeApi } from "../../lib/browser-api";
 import { NewMerchantConfirmation } from "./NewMerchantConfirmation";
+import { InstallmentFields } from "./InstallmentFields";
 import { DEFAULT_QUICK_ENTRY_ACCOUNT, torontoCalendarDate } from "./quick-entry-preferences";
 import { ReimbursementFields } from "../transactions/ReimbursementFields";
 
@@ -30,12 +32,15 @@ type QuickEntryDraft = {
   currency: string;
   description: string;
   direction: string;
+  installmentCount?: number;
   postedDate: string;
   reimbursementAmount?: string;
 };
 
 type NewMerchantPreview = {
+  confirmEveryTime: boolean;
   draft: QuickEntryDraft;
+  matchedMerchant: string | null;
   suggestedCategory: ManualTransactionPreviewResponse["data"]["category"];
 };
 
@@ -68,6 +73,7 @@ export function QuickEntryPage({ online, route }: { online: boolean; route: AppR
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const installmentCount = formValue(form, "installmentCount");
     const draft: QuickEntryDraft = {
       accountLabel: formValue(form, "accountLabel"),
       amount: formValue(form, "amount"),
@@ -75,20 +81,29 @@ export function QuickEntryPage({ online, route }: { online: boolean; route: AppR
       currency: formValue(form, "currency"),
       description: formValue(form, "description"),
       direction: formValue(form, "direction"),
+      ...(formValue(form, "installments") === "on"
+        ? { installmentCount: Number(installmentCount) }
+        : {}),
       postedDate: formValue(form, "postedDate"),
     };
     setBusy(true);
     setLoginRequired(false);
     setNotice(null);
     try {
+      const confirmEveryTime = merchantRequiresCategoryConfirmation(draft.description);
       const preview = await writeApi(
         "/api/v1/transaction-previews",
         "POST",
         draft,
         manualTransactionPreviewResponseSchema,
       );
-      if (preview.data.kind === "NEW_MERCHANT") {
-        setNewMerchantPreview({ draft, suggestedCategory: preview.data.category });
+      if (preview.data.kind === "NEW_MERCHANT" || confirmEveryTime) {
+        setNewMerchantPreview({
+          confirmEveryTime,
+          draft,
+          matchedMerchant: reportMerchantFamily(draft.description)?.displayName ?? null,
+          suggestedCategory: preview.data.category,
+        });
         setNotice(null);
       } else {
         await writeApi(
@@ -97,7 +112,11 @@ export function QuickEntryPage({ online, route }: { online: boolean; route: AppR
           draft,
           manualTransactionCreateResponseSchema,
         );
-        finish("已记下，并已按商户规则分类。");
+        finish(
+          draft.installmentCount
+            ? `已记下，共生成 ${draft.installmentCount} 期，并已按商户规则分类。`
+            : "已记下，并已按商户规则分类。",
+        );
       }
     } catch (error) {
       if (error instanceof BrowserApiError && error.requiresLogin) {
@@ -204,6 +223,7 @@ export function QuickEntryPage({ online, route }: { online: boolean; route: AppR
                 </label>
               </div>
             </details>
+            <InstallmentFields />
             <ReimbursementFields
               amount={amount}
               currency={currency}
@@ -221,6 +241,8 @@ export function QuickEntryPage({ online, route }: { online: boolean; route: AppR
           </form>
           {newMerchantPreview ? (
             <NewMerchantConfirmation
+              confirmEveryTime={newMerchantPreview.confirmEveryTime}
+              matchedMerchant={newMerchantPreview.matchedMerchant}
               merchant={newMerchantPreview.draft.description}
               onCancel={() => setNewMerchantPreview(null)}
               onConfirm={async (category) => {
@@ -230,11 +252,15 @@ export function QuickEntryPage({ online, route }: { online: boolean; route: AppR
                   {
                     ...newMerchantPreview.draft,
                     categoryId: category.id,
-                    rememberMerchant: true,
+                    ...(newMerchantPreview.confirmEveryTime ? {} : { rememberMerchant: true }),
                   },
                   manualTransactionCreateResponseSchema,
                 );
-                finish(`已记下并分类为“${category.name}”；以后相同商户会自动使用这个类别。`);
+                finish(
+                  newMerchantPreview.draft.installmentCount
+                    ? `已记下，共生成 ${newMerchantPreview.draft.installmentCount} 期并分类为“${category.name}”${newMerchantPreview.confirmEveryTime ? "。" : "；以后相同商户会自动使用这个类别。"}`
+                    : `已记下并分类为“${category.name}”${newMerchantPreview.confirmEveryTime ? "。" : "；以后相同商户会自动使用这个类别。"}`,
+                );
               }}
               suggestedCategory={newMerchantPreview.suggestedCategory}
             />

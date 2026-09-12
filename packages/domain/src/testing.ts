@@ -1,264 +1,7 @@
-import { calendarDateSchema } from "./api-contracts";
 import type { CanonicalImportRowCandidate, CsvImportColumnMapping } from "./csv-import";
 
-export const DEFAULT_TEST_TIME_ZONE = "America/Toronto";
-export const DEFAULT_TEST_INSTANT = "2026-02-01T05:00:00.000Z";
-
-export interface TestClock {
-  readonly timeZone: string;
-  localDate(instant?: Date): string;
-  now(): Date;
-  nowIso(): string;
-}
-
-export interface FixedClockOptions {
-  instant?: string | Date;
-  timeZone?: string;
-}
-
-export function createFixedClock({
-  instant = DEFAULT_TEST_INSTANT,
-  timeZone = DEFAULT_TEST_TIME_ZONE,
-}: FixedClockOptions = {}): TestClock {
-  const fixedInstant = new Date(instant);
-  if (Number.isNaN(fixedInstant.getTime())) {
-    throw new RangeError("The fixed test instant must be a valid date.");
-  }
-
-  let dateFormatter: Intl.DateTimeFormat;
-  try {
-    dateFormatter = new Intl.DateTimeFormat("en-CA-u-ca-iso8601-nu-latn", {
-      day: "2-digit",
-      month: "2-digit",
-      timeZone,
-      year: "numeric",
-    });
-  } catch {
-    throw new RangeError(`Unsupported test timezone: ${timeZone}`);
-  }
-
-  const fixedTime = fixedInstant.getTime();
-
-  function localDate(value = new Date(fixedTime)): string {
-    if (Number.isNaN(value.getTime())) {
-      throw new RangeError("The local date input must be a valid date.");
-    }
-
-    const parts = new Map(
-      dateFormatter
-        .formatToParts(value)
-        .filter((part) => part.type === "day" || part.type === "month" || part.type === "year")
-        .map((part) => [part.type, part.value]),
-    );
-
-    return calendarDateSchema.parse(
-      `${parts.get("year")}-${parts.get("month")}-${parts.get("day")}`,
-    );
-  }
-
-  return Object.freeze({
-    timeZone: dateFormatter.resolvedOptions().timeZone,
-    localDate,
-    now: () => new Date(fixedTime),
-    nowIso: () => new Date(fixedTime).toISOString(),
-  });
-}
-
-export interface PlaidPaymentMetaFixture {
-  by_order_of: string | null;
-  payee: string | null;
-  payer: string | null;
-  payment_method: string | null;
-  payment_processor: string | null;
-  ppd_id: string | null;
-  reason: string | null;
-  reference_number: string | null;
-}
-
-export interface PlaidPersonalFinanceCategoryFixture {
-  confidence_level: "VERY_HIGH" | "HIGH" | "MEDIUM" | "LOW" | "UNKNOWN" | null;
-  detailed: string;
-  primary: string;
-}
-
-export interface PlaidTransactionFixture {
-  account_id: string;
-  amount: number;
-  authorized_date: string | null;
-  date: string;
-  iso_currency_code: string | null;
-  merchant_name: string | null;
-  name: string;
-  payment_meta: PlaidPaymentMetaFixture;
-  personal_finance_category: PlaidPersonalFinanceCategoryFixture | null;
-  pending: boolean;
-  pending_transaction_id: string | null;
-  transaction_id: string;
-}
-
-export type PlaidTransactionFixtureOverrides = Partial<
-  Omit<PlaidTransactionFixture, "payment_meta" | "personal_finance_category">
-> & {
-  payment_meta?: Partial<PlaidPaymentMetaFixture>;
-  personal_finance_category?: Partial<PlaidPersonalFinanceCategoryFixture> | null;
-};
-
-const PLAID_PAYMENT_META_DEFAULTS: PlaidPaymentMetaFixture = {
-  by_order_of: null,
-  payee: null,
-  payer: null,
-  payment_method: null,
-  payment_processor: null,
-  ppd_id: null,
-  reason: null,
-  reference_number: null,
-};
-
-const PLAID_PFC_DEFAULTS: PlaidPersonalFinanceCategoryFixture = {
-  confidence_level: "VERY_HIGH",
-  detailed: "GENERAL_MERCHANDISE_SUPERSTORES",
-  primary: "GENERAL_MERCHANDISE",
-};
-
-const PLAID_TRANSACTION_DEFAULTS: PlaidTransactionFixture = {
-  account_id: "plaid-account-checking-1",
-  amount: 12.34,
-  authorized_date: "2026-01-14",
-  date: "2026-01-15",
-  iso_currency_code: "CAD",
-  merchant_name: "Fixture Merchant",
-  name: "Fixture purchase",
-  payment_meta: PLAID_PAYMENT_META_DEFAULTS,
-  personal_finance_category: null,
-  pending: false,
-  pending_transaction_id: null,
-  transaction_id: "plaid-transaction-1",
-};
-
-export function createPlaidTransactionFixture(
-  overrides: PlaidTransactionFixtureOverrides = {},
-): PlaidTransactionFixture {
-  const { payment_meta, personal_finance_category, ...fields } = overrides;
-  return {
-    ...PLAID_TRANSACTION_DEFAULTS,
-    ...fields,
-    payment_meta: {
-      ...PLAID_PAYMENT_META_DEFAULTS,
-      ...payment_meta,
-    },
-    personal_finance_category:
-      personal_finance_category === undefined
-        ? PLAID_TRANSACTION_DEFAULTS.personal_finance_category
-        : personal_finance_category === null
-          ? null
-          : { ...PLAID_PFC_DEFAULTS, ...personal_finance_category },
-  };
-}
-
-export type LedgerSource = "PLAID" | "MANUAL" | "CSV";
-export type LedgerStatus = "PENDING" | "POSTED" | "REMOVED";
-export type LedgerDirection = "INFLOW" | "OUTFLOW";
-export type CategorizationSource = "MANUAL" | "RULE" | "PLAID" | "UNCLASSIFIED";
-
-export interface LedgerTransactionFixture {
-  accountId: string;
-  amountMinor: number;
-  authorizedDate: string | null;
-  categorizationSource: CategorizationSource;
-  categoryId: string | null;
-  createdAt: string;
-  currency: string;
-  description: string;
-  direction: LedgerDirection;
-  id: string;
-  merchantName: string | null;
-  needsReview: boolean;
-  pendingPlaidTransactionId: string | null;
-  plaidTransactionId: string | null;
-  postedDate: string;
-  source: LedgerSource;
-  status: LedgerStatus;
-  updatedAt: string;
-  version: number;
-}
-
-const LEDGER_TRANSACTION_DEFAULTS: LedgerTransactionFixture = {
-  accountId: "account-checking-1",
-  amountMinor: 1234,
-  authorizedDate: "2026-01-14",
-  categorizationSource: "PLAID",
-  categoryId: "category-shopping",
-  createdAt: "2026-01-15T15:00:00.000Z",
-  currency: "CAD",
-  description: "Fixture purchase",
-  direction: "OUTFLOW",
-  id: "ledger-transaction-1",
-  merchantName: "Fixture Merchant",
-  needsReview: false,
-  pendingPlaidTransactionId: null,
-  plaidTransactionId: "plaid-transaction-1",
-  postedDate: "2026-01-15",
-  source: "PLAID",
-  status: "POSTED",
-  updatedAt: "2026-01-15T15:00:00.000Z",
-  version: 1,
-};
-
-export function createLedgerTransactionFixture(
-  overrides: Partial<LedgerTransactionFixture> = {},
-): LedgerTransactionFixture {
-  return { ...LEDGER_TRANSACTION_DEFAULTS, ...overrides };
-}
-
-export interface ImportRowInputFixture {
-  account: string;
-  amount: string;
-  currency: string;
-  date: string;
-  description: string;
-  direction: string;
-}
-
-export interface ImportRowFixture {
-  canonicalFingerprint: string | null;
-  errors: string[];
-  raw: ImportRowInputFixture;
-  rowNumber: number;
-  status: "VALID" | "INVALID" | "DUPLICATE";
-}
-
-export type ImportRowFixtureOverrides = Partial<Omit<ImportRowFixture, "errors" | "raw">> & {
-  errors?: string[];
-  raw?: Partial<ImportRowInputFixture>;
-};
-
-const IMPORT_ROW_INPUT_DEFAULTS: ImportRowInputFixture = {
-  account: "Daily Chequing",
-  amount: "12.34",
-  currency: "CAD",
-  date: "2026-01-15",
-  description: "Fixture transaction",
-  direction: "OUTFLOW",
-};
-
-const IMPORT_ROW_DEFAULTS: ImportRowFixture = {
-  canonicalFingerprint: "fixture-fingerprint-1",
-  errors: [],
-  raw: IMPORT_ROW_INPUT_DEFAULTS,
-  rowNumber: 2,
-  status: "VALID",
-};
-
-export function createImportRowFixture(
-  overrides: ImportRowFixtureOverrides = {},
-): ImportRowFixture {
-  return {
-    ...IMPORT_ROW_DEFAULTS,
-    ...overrides,
-    errors: [...(overrides.errors ?? IMPORT_ROW_DEFAULTS.errors)],
-    raw: { ...IMPORT_ROW_INPUT_DEFAULTS, ...overrides.raw },
-  };
-}
+const TEST_TIME_ZONE = "America/Toronto";
+const TEST_INSTANT = "2026-02-01T05:00:00.000Z";
 
 export interface HostileCsvFixtures {
   exactRepeats: Uint8Array;
@@ -350,45 +93,28 @@ export function createHostileCsvFixtures(): HostileCsvFixtures {
   };
 }
 
-export interface ReportFixture {
-  currency: string;
-  endDate: string;
-  generatedAt: string;
-  startDate: string;
-  timeZone: string;
-  transactions: LedgerTransactionFixture[];
-}
-
-const REPORT_DEFAULTS: ReportFixture = {
-  currency: "CAD",
-  endDate: "2026-01-31",
-  generatedAt: DEFAULT_TEST_INSTANT,
-  startDate: "2026-01-01",
-  timeZone: DEFAULT_TEST_TIME_ZONE,
-  transactions: [LEDGER_TRANSACTION_DEFAULTS],
-};
-
-export function createReportFixture(overrides: Partial<ReportFixture> = {}): ReportFixture {
-  return {
-    ...REPORT_DEFAULTS,
-    ...overrides,
-    transactions: (overrides.transactions ?? REPORT_DEFAULTS.transactions).map((transaction) => ({
-      ...transaction,
-    })),
-  };
-}
-
 export interface ReportCategoryFixture {
   id: string;
   kind: "EXPENSE" | "INCOME" | "TRANSFER" | "UNCLASSIFIED";
   name: string;
 }
 
-export interface ReportTransferMatchFixture {
+export interface ReportTransactionFixture {
+  amountMinor: number;
+  categorizationSource: "MANUAL" | "RULE" | "PLAID" | "UNCLASSIFIED";
+  categoryId: string | null;
+  createdAt: string;
+  currency: string;
+  description: string;
+  direction: "INFLOW" | "OUTFLOW";
   id: string;
-  leftTransactionId: string;
-  rightTransactionId: string;
-  status: "CONFIRMED";
+  merchantName: string | null;
+  needsReview: boolean;
+  postedDate: string;
+  source: "PLAID" | "MANUAL" | "CSV";
+  status: "PENDING" | "POSTED" | "REMOVED";
+  updatedAt: string;
+  version: number;
 }
 
 export interface ReportCurrencyMetricsFixture {
@@ -410,18 +136,18 @@ export interface ReconciledReportFixture {
   expected: {
     eligibleTransactionIds: string[];
     excludedTransactionIds: {
-      confirmedInternalTransfer: string[];
       pending: string[];
       removed: string[];
     };
+    // Present in the population but contributing nothing, because their category kind is TRANSFER.
+    internalTransferTransactionIds: string[];
     months: ReportPeriodExpectationFixture[];
     quarter: ReportPeriodExpectationFixture;
   };
   generatedAt: string;
   startDate: string;
   timeZone: string;
-  transactions: LedgerTransactionFixture[];
-  transferMatches: ReportTransferMatchFixture[];
+  transactions: ReportTransactionFixture[];
 }
 
 const RECONCILED_REPORT_CATEGORIES: ReportCategoryFixture[] = [
@@ -432,23 +158,29 @@ const RECONCILED_REPORT_CATEGORIES: ReportCategoryFixture[] = [
 
 function reportTransaction(
   id: string,
-  overrides: Partial<LedgerTransactionFixture>,
-): LedgerTransactionFixture {
-  return createLedgerTransactionFixture({
-    authorizedDate: null,
-    categorizationSource: "PLAID",
-    createdAt: DEFAULT_TEST_INSTANT,
+  overrides: Partial<ReportTransactionFixture>,
+): ReportTransactionFixture {
+  return {
+    amountMinor: 1234,
+    categorizationSource: "RULE",
+    categoryId: "report-category-expense",
+    createdAt: TEST_INSTANT,
+    currency: "CAD",
     description: id,
+    direction: "OUTFLOW",
     id,
     merchantName: id,
     needsReview: false,
-    plaidTransactionId: `plaid-${id}`,
-    updatedAt: DEFAULT_TEST_INSTANT,
+    postedDate: "2026-01-15",
+    source: "CSV",
+    status: "POSTED",
+    updatedAt: TEST_INSTANT,
+    version: 1,
     ...overrides,
-  });
+  };
 }
 
-const RECONCILED_REPORT_TRANSACTIONS: LedgerTransactionFixture[] = [
+const RECONCILED_REPORT_TRANSACTIONS: ReportTransactionFixture[] = [
   reportTransaction("report-december-pending", {
     amountMinor: 7_000,
     categoryId: "report-category-expense",
@@ -485,7 +217,6 @@ const RECONCILED_REPORT_TRANSACTIONS: LedgerTransactionFixture[] = [
     categorizationSource: "MANUAL",
     categoryId: "report-category-expense",
     direction: "OUTFLOW",
-    plaidTransactionId: null,
     postedDate: "2026-01-12",
     source: "MANUAL",
   }),
@@ -494,7 +225,6 @@ const RECONCILED_REPORT_TRANSACTIONS: LedgerTransactionFixture[] = [
     categorizationSource: "MANUAL",
     categoryId: "report-category-income",
     direction: "INFLOW",
-    plaidTransactionId: null,
     postedDate: "2026-01-13",
     source: "CSV",
   }),
@@ -505,7 +235,6 @@ const RECONCILED_REPORT_TRANSACTIONS: LedgerTransactionFixture[] = [
     postedDate: "2026-01-15",
   }),
   reportTransaction("report-transfer-inflow", {
-    accountId: "account-credit-card-1",
     amountMinor: 75_000,
     categoryId: "report-category-transfer",
     direction: "INFLOW",
@@ -551,19 +280,9 @@ const RECONCILED_REPORT_TRANSACTIONS: LedgerTransactionFixture[] = [
     categorizationSource: "MANUAL",
     categoryId: "report-category-expense",
     direction: "OUTFLOW",
-    plaidTransactionId: null,
     postedDate: "2026-03-01",
     source: "MANUAL",
   }),
-];
-
-const RECONCILED_REPORT_TRANSFER_MATCHES: ReportTransferMatchFixture[] = [
-  {
-    id: "report-transfer-match-1",
-    leftTransactionId: "report-transfer-inflow",
-    rightTransactionId: "report-transfer-outflow",
-    status: "CONFIRMED",
-  },
 ];
 
 const RECONCILED_REPORT_EXPECTED: ReconciledReportFixture["expected"] = {
@@ -574,16 +293,18 @@ const RECONCILED_REPORT_EXPECTED: ReconciledReportFixture["expected"] = {
     "report-cad-expense-refund",
     "report-cad-manual-expense",
     "report-cad-csv-income",
+    "report-transfer-outflow",
+    "report-transfer-inflow",
     "report-usd-salary",
     "report-usd-expense",
     "report-usd-expense-refund",
     "report-march-manual-expense",
   ],
   excludedTransactionIds: {
-    confirmedInternalTransfer: ["report-transfer-inflow", "report-transfer-outflow"],
     pending: ["report-december-pending", "report-january-pending"],
     removed: ["report-january-removed"],
   },
+  internalTransferTransactionIds: ["report-transfer-outflow", "report-transfer-inflow"],
   months: [
     {
       currencies: [
@@ -618,6 +339,8 @@ const RECONCILED_REPORT_EXPECTED: ReconciledReportFixture["expected"] = {
             "report-cad-expense-refund",
             "report-cad-manual-expense",
             "report-cad-csv-income",
+            "report-transfer-outflow",
+            "report-transfer-inflow",
           ],
         },
         {
@@ -683,6 +406,8 @@ const RECONCILED_REPORT_EXPECTED: ReconciledReportFixture["expected"] = {
           "report-cad-expense-refund",
           "report-cad-manual-expense",
           "report-cad-csv-income",
+          "report-transfer-outflow",
+          "report-transfer-inflow",
           "report-march-manual-expense",
         ],
       },
@@ -705,12 +430,12 @@ export function createReconciledReportFixture(): ReconciledReportFixture {
     expected: {
       eligibleTransactionIds: [...RECONCILED_REPORT_EXPECTED.eligibleTransactionIds],
       excludedTransactionIds: {
-        confirmedInternalTransfer: [
-          ...RECONCILED_REPORT_EXPECTED.excludedTransactionIds.confirmedInternalTransfer,
-        ],
         pending: [...RECONCILED_REPORT_EXPECTED.excludedTransactionIds.pending],
         removed: [...RECONCILED_REPORT_EXPECTED.excludedTransactionIds.removed],
       },
+      internalTransferTransactionIds: [
+        ...RECONCILED_REPORT_EXPECTED.internalTransferTransactionIds,
+      ],
       months: RECONCILED_REPORT_EXPECTED.months.map((month) => ({
         currencies: month.currencies.map((currency) => ({
           ...currency,
@@ -726,10 +451,9 @@ export function createReconciledReportFixture(): ReconciledReportFixture {
         period: RECONCILED_REPORT_EXPECTED.quarter.period,
       },
     },
-    generatedAt: DEFAULT_TEST_INSTANT,
+    generatedAt: TEST_INSTANT,
     startDate: "2025-12-01",
-    timeZone: DEFAULT_TEST_TIME_ZONE,
+    timeZone: TEST_TIME_ZONE,
     transactions: RECONCILED_REPORT_TRANSACTIONS.map((transaction) => ({ ...transaction })),
-    transferMatches: RECONCILED_REPORT_TRANSFER_MATCHES.map((match) => ({ ...match })),
   };
 }

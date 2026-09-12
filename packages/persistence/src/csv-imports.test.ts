@@ -221,6 +221,7 @@ describe("CsvImportPreviewRepository", () => {
     ).resolves.toEqual(new Set([DUPLICATE_KEY]));
     expect(recording.queries).toHaveLength(1);
     expect(recording.queries[0]!.sql).toContain("FROM json_each(?)");
+    expect(recording.queries[0]!.sql).toContain("LEFT JOIN accounts AS transaction_account");
     expect(recording.queries[0]!.sql).not.toContain(RAW.description);
     expect(recording.queries[0]!.bindings).toHaveLength(1);
   });
@@ -361,6 +362,8 @@ describe("CsvImportPreviewRepository", () => {
       evidence: "OWNER_RULE_EXACT",
       transactionId: "transaction-owner-rule",
     });
+    expect(recording.queries[0]!.sql).toContain("LEFT JOIN accounts AS transaction_account");
+    expect(recording.queries[0]!.sql).toContain("transaction_account.display_name");
   });
 
   it("requires review for ambiguous, shared, same-file, or non-manual conflicts", async () => {

@@ -47,7 +47,6 @@ describe("authenticated app Worker routing", () => {
       ["/exports/data.json", "POST"],
       ["/merchant-rule-previews", "POST"],
       ["/transactions/transaction-example", "PUT"],
-      ["/transactions/transaction-example/category-suggestions", "POST"],
       ["/transactions/transaction-example/merchant-rule", "POST"],
       ["/merchant-rules/example", "PUT"],
     ] as const) {

@@ -91,6 +91,57 @@ const CREATE_INPUT = {
 } as const;
 
 describe("ManualTransactionRepository", () => {
+  it("allocates installment reimbursements without exceeding any installment", async () => {
+    const queries: RecordedQuery[] = [];
+    const rows = [1, 2, 3].map((number) => ({
+      ...MANUAL_ROW,
+      amount_minor: 2,
+      id: `transaction-installment-${number}`,
+      installment_count: 3,
+      installment_group_id: "installment-group-1",
+      installment_number: number,
+      reimbursement_minor: number === 1 ? 1 : 2,
+    }));
+    const database = {
+      prepare(sql: string) {
+        const query: RecordedQuery = { bindings: [], sql };
+        queries.push(query);
+        const statement = {
+          bind(...bindings: unknown[]) {
+            query.bindings = bindings;
+            return statement;
+          },
+        };
+        return statement;
+      },
+      batch() {
+        return Promise.resolve(rows.map((row) => ({ results: [row] })));
+      },
+    } as unknown as D1Database;
+    let id = 0;
+
+    await expect(
+      new ManualTransactionRepository(database, {
+        createId: () => `transaction-installment-${(id += 1)}`,
+        createInstallmentGroupId: () => "installment-group-1",
+      }).create({
+        ...CREATE_INPUT,
+        amountMinor: 6,
+        installmentCount: 3,
+        reimbursementMinor: 5,
+      }),
+    ).resolves.toMatchObject({
+      kind: "CREATED",
+      transactions: [
+        { amountMinor: 2, reimbursementMinor: 1 },
+        { amountMinor: 2, reimbursementMinor: 2 },
+        { amountMinor: 2, reimbursementMinor: 2 },
+      ],
+    });
+    expect(queries.map(({ bindings }) => bindings[10])).toEqual([2, 2, 2]);
+    expect(queries.map(({ bindings }) => bindings[11])).toEqual([1, 2, 2]);
+  });
+
   it("atomically creates a confirmed transaction and its exact merchant rule", async () => {
     const queries: RecordedQuery[] = [];
     let batchCalls = 0;
@@ -160,7 +211,6 @@ describe("ManualTransactionRepository", () => {
     await expect(repository.create(CREATE_INPUT)).resolves.toEqual({
       kind: "CREATED",
       transaction: {
-        accountId: null,
         accountLabel: "Cash wallet",
         amountMinor: 1234,
         reimbursementMinor: 0,
@@ -182,8 +232,6 @@ describe("ManualTransactionRepository", () => {
           referenceNumber: null,
         },
         pendingTransactionId: null,
-        plaidPersonalFinanceCategory: null,
-        plaidTransactionId: null,
         postedDate: "2026-07-15",
         rawDescription: "Neighbourhood market",
         reviewReason: null,
@@ -202,18 +250,8 @@ describe("ManualTransactionRepository", () => {
     expect(recording.queries[0]!.bindings).toContain("Neighbourhood market");
   });
 
-  it("creates an uncategorized quick transaction once and derives a rule-ready merchant", async () => {
-    const unclassifiedRow = {
-      ...MANUAL_ROW,
-      categorization_source: "UNCLASSIFIED",
-      category_id: "category-system-unclassified",
-      category_rule_id: null,
-      merchant_name: "Neighbourhood   Market",
-      needs_review: 1,
-      raw_description: "  Neighbourhood   Market  ",
-      review_reason: "UNCLASSIFIED_MERCHANT",
-    };
-    const recording = recordingDatabase({ firstResults: [unclassifiedRow] });
+  it("requires confirmation before creating an unknown merchant", async () => {
+    const recording = recordingDatabase({ firstResults: [null] });
 
     await expect(
       new ManualTransactionRepository(recording.database, {
@@ -227,19 +265,10 @@ describe("ManualTransactionRepository", () => {
         now: NOW,
         postedDate: "2026-07-15",
       }),
-    ).resolves.toMatchObject({
-      kind: "CREATED",
-      transaction: {
-        categorizationSource: "UNCLASSIFIED",
-        categoryId: "category-system-unclassified",
-        merchantName: "Neighbourhood   Market",
-        needsReview: true,
-        normalizedMerchant: "neighbourhood market",
-      },
-    });
+    ).resolves.toEqual({ kind: "CATEGORY_CONFIRMATION_REQUIRED" });
     expect(recording.queries).toHaveLength(1);
     expect(recording.queries[0]!.sql).toContain("merchant_rules");
-    expect(recording.queries[0]!.sql).toContain("UNCLASSIFIED_MERCHANT");
+    expect(recording.queries[0]!.sql).toContain("matched_rule.id IS NOT NULL");
     expect(recording.queries[0]!.bindings).not.toContain(undefined);
   });
 

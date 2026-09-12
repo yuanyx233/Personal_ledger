@@ -56,11 +56,10 @@ function createRecordingDatabase({
 }
 
 const TRANSACTION_ROW = {
-  account_id: "account-1",
-  account_label: null,
+  account_label: "Daily Chequing",
   amount_minor: 1234,
   authorized_date: "2026-01-14",
-  categorization_source: "PLAID",
+  categorization_source: "RULE",
   category_id: "category-1",
   category_rule_id: null,
   created_at: "2026-01-15T12:00:00.000Z",
@@ -73,14 +72,10 @@ const TRANSACTION_ROW = {
   payment_metadata_json:
     '{"payee":"Fixture Payee","payer":"","paymentMethod":"INTERAC","reason":"must not leak","referenceNumber":"reference-1"}',
   pending_transaction_id: null,
-  plaid_pfc_confidence: "HIGH",
-  plaid_pfc_detailed: "GENERAL_MERCHANDISE_SUPERSTORES",
-  plaid_pfc_primary: "GENERAL_MERCHANDISE",
-  plaid_transaction_id: "plaid-transaction-1",
   posted_date: "2026-01-15",
   raw_description: "Fixture purchase",
   review_reason: "UNCLASSIFIED_MERCHANT",
-  source: "PLAID",
+  source: "CSV",
   status: "POSTED",
   updated_at: "2026-01-15T12:00:00.000Z",
   version: 3,
@@ -93,7 +88,7 @@ describe("typed prepared-statement repositories", () => {
 
     const result = await new TransactionRepository(recording.database).list({
       accountId,
-      categorizationSource: "PLAID",
+      categorizationSource: "RULE",
       categoryId: "category-1",
       currency: "CAD",
       dateFrom: "2026-01-01",
@@ -101,7 +96,7 @@ describe("typed prepared-statement repositories", () => {
       needsReview: true,
       pageSize: 25,
       sort: "AMOUNT_DESC",
-      source: "PLAID",
+      source: "CSV",
       status: "POSTED",
     });
 
@@ -110,14 +105,13 @@ describe("typed prepared-statement repositories", () => {
     expect(query.sql).toContain("ORDER BY amount_minor DESC, id DESC LIMIT ?");
     expect(query.bindings).toEqual([
       accountId,
-      accountId,
       "category-1",
-      "PLAID",
+      "RULE",
       "CAD",
       "2026-01-01",
       "2026-01-31",
       1,
-      "PLAID",
+      "CSV",
       "POSTED",
       25,
     ]);
@@ -132,11 +126,6 @@ describe("typed prepared-statement repositories", () => {
         payer: "",
         paymentMethod: "INTERAC",
         referenceNumber: "reference-1",
-      },
-      plaidPersonalFinanceCategory: {
-        confidenceLevel: "HIGH",
-        detailed: "GENERAL_MERCHANDISE_SUPERSTORES",
-        primary: "GENERAL_MERCHANDISE",
       },
       version: 3,
     });
@@ -164,7 +153,7 @@ describe("typed prepared-statement repositories", () => {
     expect(query.sql).toContain("normalized_merchant = ?");
     expect(query.sql).toContain("report_category.kind = 'EXPENSE'");
     expect(query.sql).toContain("status = 'POSTED'");
-    expect(query.sql).toContain("active_match.status IN ('AUTO_CONFIRMED', 'CONFIRMED')");
+    expect(query.sql).not.toContain("transfer_matches");
     expect(query.bindings).toEqual(["CAD", "2026-01-01", "2026-01-31", normalizedMerchant, 2]);
     expect(firstPage.nextCursor).toMatch(/^[A-Za-z0-9_-]+$/);
 
@@ -193,7 +182,7 @@ describe("typed prepared-statement repositories", () => {
 
     const result = await new TransactionRepository(recording.database).listForCsvExport({
       accountId: "account-1",
-      categorizationSource: "PLAID",
+      categorizationSource: "RULE",
       categoryId: "category-1",
       currency: "CAD",
       dateFrom: "2026-01-01",
@@ -202,14 +191,13 @@ describe("typed prepared-statement repositories", () => {
       normalizedMerchant,
       reportMetric: "NET_SPENDING",
       sort: "AMOUNT_DESC",
-      source: "PLAID",
+      source: "CSV",
       status: "POSTED",
     });
 
     const query = recording.queries[0]!;
     expect(query.sql).not.toContain(normalizedMerchant);
     expect(query.sql).toContain("WITH filtered_transactions AS");
-    expect(query.sql).toContain("LEFT JOIN accounts");
     expect(query.sql).toContain("LEFT JOIN categories");
     expect(query.sql).toContain("LEFT JOIN merchant_rules");
     expect(query.sql).toContain("report_category.kind = 'EXPENSE'");
@@ -218,15 +206,14 @@ describe("typed prepared-statement repositories", () => {
     );
     expect(query.bindings).toEqual([
       "account-1",
-      "account-1",
       "category-1",
-      "PLAID",
+      "RULE",
       "CAD",
       "2026-01-01",
       "2026-01-31",
       1,
       normalizedMerchant,
-      "PLAID",
+      "CSV",
       "POSTED",
       10_001,
     ]);

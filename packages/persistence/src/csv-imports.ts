@@ -276,7 +276,8 @@ export class CsvImportPreviewRepository {
                transactions.direction,
                transactions.currency,
                transactions.raw_description,
-               COALESCE(transactions.account_label, accounts.display_name, '') AS account_label
+               COALESCE(transactions.account_label, transaction_account.display_name, '')
+                 AS account_label
              FROM candidates
              INNER JOIN transactions
                ON transactions.posted_date = candidates.posted_date
@@ -284,7 +285,8 @@ export class CsvImportPreviewRepository {
               AND transactions.direction = candidates.direction
               AND transactions.currency = candidates.currency
               AND transactions.status != 'REMOVED'
-             LEFT JOIN accounts ON accounts.id = transactions.account_id`,
+             LEFT JOIN accounts AS transaction_account
+               ON transaction_account.id = transactions.account_id`,
           )
           .bind(JSON.stringify(chunk))
           .all<DuplicateCandidateRow>();
@@ -378,15 +380,13 @@ export class CsvImportPreviewRepository {
               AND ledger_transaction.currency = input.currency
               AND ledger_transaction.direction = input.direction
               AND abs(julianday(ledger_transaction.posted_date) - julianday(input.posted_date)) <= 3
-             LEFT JOIN accounts AS ledger_account
-               ON ledger_account.id = ledger_transaction.account_id
+             LEFT JOIN accounts AS transaction_account
+               ON transaction_account.id = ledger_transaction.account_id
              LEFT JOIN merchant_rules AS active_rule
                ON active_rule.id = ledger_transaction.category_rule_id AND active_rule.active = 1
              WHERE COALESCE(
-                     ledger_transaction.account_label,
-                     ledger_account.display_name,
-                     ''
-                   ) = input.account_label
+               ledger_transaction.account_label, transaction_account.display_name, ''
+             ) = input.account_label
                AND NOT EXISTS (
                SELECT 1
                FROM import_rows AS committed_row
@@ -1033,16 +1033,16 @@ export class CsvImportCommitRepository {
                  ON default_category.id = input.default_category_id AND default_category.active = 1
              )
              INSERT INTO transactions (
-               id, source, account_id, account_label, plaid_transaction_id,
-               pending_transaction_id, import_fingerprint, status, authorized_date,
+               id, source, account_label,
+               import_fingerprint, status,
                posted_date, amount_minor, direction, currency, provider_amount_decimal,
                raw_description, merchant_name, payment_metadata_json, category_id,
                categorization_source, category_rule_id, needs_review, review_reason,
                created_at, updated_at, version, normalized_merchant
              )
              SELECT
-               transaction_id, 'CSV', NULL, account_label, NULL, NULL, fingerprint,
-               'POSTED', NULL, posted_date, amount_minor, direction, currency, amount,
+               transaction_id, 'CSV', account_label, fingerprint,
+               'POSTED', posted_date, amount_minor, direction, currency, amount,
                description, merchant, NULL,
                COALESCE(explicit_category_id, rule_category_id, family_category_id, builtin_category_id, ?),
                CASE

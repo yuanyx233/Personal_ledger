@@ -11,18 +11,14 @@ const VALID_OUTPUT = {
   evidence: {
     counts: {
       budgets: 0,
-      accounts: 2,
       categories: 4,
       categoryAudits: 1,
-      connections: 1,
       importBatches: 1,
       importRows: 1,
       merchantRules: 1,
       subscriptionOccurrences: 1,
       subscriptions: 1,
       transactions: 4,
-      transferMatchAudits: 1,
-      transferMatches: 1,
     },
     foreignKeyViolations: 0,
     relationshipViolations: 0,

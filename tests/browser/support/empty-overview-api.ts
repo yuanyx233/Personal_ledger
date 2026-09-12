@@ -21,36 +21,13 @@ export async function mockEmptyOverviewApi(page: Page) {
   await page.route("**/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
     let body: unknown = {};
-    if (url.pathname.endsWith("/connections")) {
-      body = { data: { connections: [] }, meta: {} };
-    } else if (url.pathname.endsWith("/review-queue")) {
-      body = {
-        data: { items: [] },
-        meta: {
-          counts: {
-            ambiguousTransfers: 0,
-            ruleConflicts: 0,
-            total: 0,
-            uncertainETransfers: 0,
-            unclassifiedMerchants: 0,
-          },
-          hasMore: false,
-          nextCursor: null,
-          query: { pageSize: 1 },
-        },
-      };
-    } else if (url.pathname.endsWith("/reports/cash-flow")) {
+    if (url.pathname.endsWith("/reports/cash-flow")) {
       const period = url.searchParams.get("period")!;
       const prior = previousMonth(period);
       body = {
         data: { sections: [] },
         meta: {
-          freshness: {
-            connections: [],
-            generatedAt: "2026-07-17T12:00:00.000Z",
-            isStale: false,
-            staleAfterMinutes: 60,
-          },
+          freshness: { generatedAt: "2026-07-17T12:00:00.000Z" },
           periods: {
             current: periodMeta(period),
             previousPeriod: periodMeta(prior),

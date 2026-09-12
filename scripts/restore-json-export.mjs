@@ -166,22 +166,15 @@ function assertSystemCategories(target, document) {
 const EVIDENCE_QUERY = `
   SELECT
     (SELECT COUNT(*) FROM category_budgets) AS budgets,
-    (SELECT COUNT(*) FROM accounts) AS accounts,
     (SELECT COUNT(*) FROM categories) AS categories,
     (SELECT COUNT(*) FROM category_audits) AS categoryAudits,
-    (SELECT COUNT(*) FROM connections) AS connections,
     (SELECT COUNT(*) FROM import_batches) AS importBatches,
     (SELECT COUNT(*) FROM import_rows) AS importRows,
     (SELECT COUNT(*) FROM merchant_rules) AS merchantRules,
     (SELECT COUNT(*) FROM subscription_occurrences) AS subscriptionOccurrences,
     (SELECT COUNT(*) FROM subscriptions) AS subscriptions,
     (SELECT COUNT(*) FROM transactions) AS transactions,
-    (SELECT COUNT(*) FROM transfer_match_audits) AS transferMatchAudits,
-    (SELECT COUNT(*) FROM transfer_matches) AS transferMatches,
     (
-      (SELECT COUNT(*) FROM accounts AS child
-       LEFT JOIN connections AS parent ON parent.id = child.connection_id
-       WHERE parent.id IS NULL) +
       (SELECT COUNT(*) FROM merchant_rules AS child
        LEFT JOIN categories AS parent ON parent.id = child.category_id
        WHERE parent.id IS NULL) +
@@ -193,9 +186,6 @@ const EVIDENCE_QUERY = `
        LEFT JOIN transactions AS transaction_record ON transaction_record.id = child.transaction_id
        WHERE subscription.id IS NULL OR transaction_record.id IS NULL) +
       (SELECT COUNT(*) FROM transactions AS child
-       LEFT JOIN accounts AS parent ON parent.id = child.account_id
-       WHERE child.account_id IS NOT NULL AND parent.id IS NULL) +
-      (SELECT COUNT(*) FROM transactions AS child
        LEFT JOIN categories AS parent ON parent.id = child.category_id
        WHERE child.category_id IS NOT NULL AND parent.id IS NULL) +
       (SELECT COUNT(*) FROM transactions AS child
@@ -206,13 +196,6 @@ const EVIDENCE_QUERY = `
        WHERE child.pending_transaction_id IS NOT NULL AND parent.id IS NULL) +
       (SELECT COUNT(*) FROM category_audits AS child
        LEFT JOIN transactions AS parent ON parent.id = child.transaction_id
-       WHERE parent.id IS NULL) +
-      (SELECT COUNT(*) FROM transfer_matches AS child
-       LEFT JOIN transactions AS left_parent ON left_parent.id = child.left_transaction_id
-       LEFT JOIN transactions AS right_parent ON right_parent.id = child.right_transaction_id
-       WHERE left_parent.id IS NULL OR right_parent.id IS NULL) +
-      (SELECT COUNT(*) FROM transfer_match_audits AS child
-       LEFT JOIN transfer_matches AS parent ON parent.id = child.transfer_match_id
        WHERE parent.id IS NULL) +
       (SELECT COUNT(*) FROM import_rows AS child
        LEFT JOIN import_batches AS batch ON batch.id = child.batch_id
@@ -242,14 +225,6 @@ const REPORT_QUERY = `
   JOIN categories AS category ON category.id = transaction_record.category_id
   WHERE transaction_record.status = 'POSTED'
     AND category.kind IN ('INCOME', 'EXPENSE')
-    AND NOT EXISTS (
-      SELECT 1 FROM transfer_matches AS match
-      WHERE match.status IN ('AUTO_CONFIRMED', 'CONFIRMED')
-        AND (
-          match.left_transaction_id = transaction_record.id OR
-          match.right_transaction_id = transaction_record.id
-        )
-    )
   GROUP BY transaction_record.currency
   ORDER BY transaction_record.currency ASC
 `;
@@ -266,18 +241,14 @@ function restoredEvidence(target) {
   return {
     counts: {
       budgets: counts.budgets,
-      accounts: counts.accounts,
       categories: counts.categories,
       categoryAudits: counts.categoryAudits,
-      connections: counts.connections,
       importBatches: counts.importBatches,
       importRows: counts.importRows,
       merchantRules: counts.merchantRules,
       subscriptionOccurrences: counts.subscriptionOccurrences,
       subscriptions: counts.subscriptions,
       transactions: counts.transactions,
-      transferMatchAudits: counts.transferMatchAudits,
-      transferMatches: counts.transferMatches,
     },
     foreignKeyViolations: query(target, "PRAGMA foreign_key_check").length,
     relationshipViolations: counts.relationshipViolations,

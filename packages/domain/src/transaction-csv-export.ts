@@ -12,7 +12,6 @@ export const TRANSACTION_CSV_HEADERS = [
   "amount_minor",
   "amount",
   "currency",
-  "account_id",
   "account",
   "description",
   "merchant",
@@ -22,9 +21,6 @@ export const TRANSACTION_CSV_HEADERS = [
   "categorization_source",
   "category_rule_id",
   "category_rule_merchant",
-  "plaid_pfc_primary",
-  "plaid_pfc_detailed",
-  "plaid_pfc_confidence",
   "source",
   "needs_review",
   "review_reason",
@@ -46,7 +42,6 @@ export class TransactionCsvExportError extends Error {
 }
 
 export interface TransactionCsvRow {
-  accountId: string | null;
   accountLabel: string;
   amountMinor: number;
   reimbursementMinor?: number;
@@ -63,9 +58,6 @@ export interface TransactionCsvRow {
   merchantName: string | null;
   needsReview: boolean;
   normalizedMerchant: string | null;
-  plaidPfcConfidence: "VERY_HIGH" | "HIGH" | "MEDIUM" | "LOW" | "UNKNOWN" | null;
-  plaidPfcDetailed: string | null;
-  plaidPfcPrimary: string | null;
   postedDate: string;
   reviewReason: string | null;
   source: "PLAID" | "MANUAL" | "CSV";
@@ -119,7 +111,6 @@ function serializeRow(row: TransactionCsvRow): string {
     String(row.amountMinor),
     minorUnitsToCsvDecimal(row.amountMinor),
     row.currency,
-    row.accountId,
     row.accountLabel,
     row.description,
     row.merchantName,
@@ -129,9 +120,6 @@ function serializeRow(row: TransactionCsvRow): string {
     row.categorizationSource,
     row.categoryRuleId,
     row.categoryRuleDisplayMerchant,
-    row.plaidPfcPrimary,
-    row.plaidPfcDetailed,
-    row.plaidPfcConfidence,
     row.source,
     row.needsReview ? "true" : "false",
     row.reviewReason,
