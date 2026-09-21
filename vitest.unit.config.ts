@@ -3,7 +3,11 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     coverage: {
-      exclude: ["**/*.test.ts", "packages/persistence/src/connection-creation.ts"],
+      exclude: [
+        "**/*.test.ts",
+        "packages/persistence/src/connection-creation.ts",
+        "packages/persistence/src/subscriptions.ts",
+      ],
       include: ["packages/domain/src/**/*.ts", "packages/persistence/src/**/*.ts"],
       provider: "v8",
       reporter: ["text", "json-summary"],

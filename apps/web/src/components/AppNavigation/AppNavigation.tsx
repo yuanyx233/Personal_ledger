@@ -1,7 +1,7 @@
 import { PRODUCT_NAME } from "@ledger/domain";
 import type { MouseEvent, ReactNode } from "react";
 
-import { APP_ROUTES, type RouteId } from "../../app-routes";
+import { APP_ROUTES, SUBSCRIPTIONS_ROUTE, type RouteId } from "../../app-routes";
 
 function NavIcon({ route }: { route: RouteId }) {
   const paths: Record<RouteId, ReactNode> = {
@@ -31,6 +31,12 @@ function NavIcon({ route }: { route: RouteId }) {
       <>
         <circle cx="11" cy="11" r="3" />
         <path d="M11 3v2M11 17v2M3 11h2M17 11h2M5.3 5.3l1.4 1.4M15.3 15.3l1.4 1.4M16.7 5.3l-1.4 1.4M6.7 15.3l-1.4 1.4" />
+      </>
+    ),
+    subscriptions: (
+      <>
+        <path d="M6 4h10v14H6z" />
+        <path d="M9 8h4M9 12h4" />
       </>
     ),
     transactions: (
@@ -68,10 +74,15 @@ interface AppNavigationProps {
 }
 
 export function AppNavigation({ currentPath, layout, onNavigate }: AppNavigationProps) {
+  const routes =
+    layout === "sidebar"
+      ? [...APP_ROUTES.slice(0, 4), SUBSCRIPTIONS_ROUTE, ...APP_ROUTES.slice(4)]
+      : APP_ROUTES;
+
   return (
     <nav aria-label="主导航" className={`${layout}-navigation`} data-navigation={layout}>
       <ul className="navigation-list">
-        {APP_ROUTES.map((route) => (
+        {routes.map((route) => (
           <li key={route.id}>
             <a
               aria-current={route.path === currentPath ? "page" : undefined}

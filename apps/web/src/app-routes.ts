@@ -1,4 +1,5 @@
-export type RouteId = "add" | "analysis" | "overview" | "settings" | "transactions";
+export type RouteId =
+  "add" | "analysis" | "overview" | "settings" | "subscriptions" | "transactions";
 
 export interface AppRoute {
   description: string;
@@ -39,3 +40,10 @@ export const APP_ROUTES: readonly AppRoute[] = [
     path: "/settings",
   },
 ];
+
+export const SUBSCRIPTIONS_ROUTE: AppRoute = {
+  description: "管理每月自动记账的订阅。",
+  id: "subscriptions",
+  label: "订阅",
+  path: "/subscriptions",
+};

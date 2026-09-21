@@ -1,10 +1,16 @@
 # Deployment runbook
 
-The application now uses one App Worker with static frontend assets and one D1 database. There is no Sync Worker binding, scheduled handler, Plaid credential requirement, or bank connection flow.
+The application now uses one App Worker with static frontend assets and one D1 database. The App Worker has a scheduled handler and one `*/15 * * * *` Cron Trigger for monthly subscription catch-up. There is no Sync Worker binding, Plaid credential requirement, or bank connection flow.
 
 The original production execution remains recorded in `openspec/changes/build-free-personal-ledger/verification.md`. The owner-authorized 2026-09-04 simplified website release and rollback version are recorded in `openspec/changes/remove-automatic-bank-sync/tasks.md`. Every subsequent deployment, Access change, remote migration, or deletion of an old remote Worker requires separate explicit authorization.
 
 ## Before deployment
+
+### Current subscription release — verified 2026-09-16
+
+Production version `89d65032-4549-4e12-ac53-1941b581e3e5` exposes subscription management and the active `*/15 * * * *` subscription Cron. Remote D1 reports no pending migrations through `0022_merchant_knowledge_categories.sql`. The immediately preceding deployed version is `3cb35bc0-2080-425d-b4d6-b7664612ebd9`; preserve the additive D1 migrations on any application rollback.
+
+The complete build, test, asset-hash, screenshot, D1, and live Cron evidence is recorded in `openspec/changes/restore-monthly-subscriptions/tasks.md`.
 
 ### Merchant service grouping release — 2026-09-05
 
@@ -67,13 +73,13 @@ npm run build
 npx wrangler deploy --config apps/web/wrangler.jsonc
 ```
 
-Do not deploy the removed Sync Worker. Keep the App's explicit empty `triggers.crons` list: omitting it does not remove existing remote schedules. The 2026-09-04 website release cleared the App's schedules, but did not delete the separate old Sync Worker or legacy secrets. Inspect those exact resources and obtain authorization before removing them.
+Do not deploy the removed Sync Worker. Keep the App's `triggers.crons` value exactly `["*/15 * * * *"]`; Cloudflare replaces previous Cron Triggers with the values declared in Wrangler configuration. Do not remove the subscription Cron during unrelated releases. The separate old Sync Worker and legacy secrets still require exact-resource inspection and separate authorization before removal.
 
 For a separately authorized remote database migration, first run the documented `npm run db:migrate:remote` preflight against a fresh local restore directory. Only use its `--execute` option after reviewing the backup and migration result. Never overwrite the existing D1 or reverse its migration history.
 
 ## Acceptance and rollback
 
-Verify anonymous/wrong-owner denial, authenticated session bootstrap, CSRF protection, manual entry, category correction (including Transfer), CSV preview/commit/deduplication, currency-separated reports and both exports. Financial responses remain no-store; offline pages must not reveal cached ledger data. No bank, subscription, sync or review-queue API should be available.
+Verify anonymous/wrong-owner denial, authenticated session bootstrap, CSRF protection, manual and installment entry, subscription management and scheduled generation, category correction (including Transfer), CSV preview/commit/deduplication, currency-separated reports and both exports. Financial responses remain no-store; offline pages must not reveal cached ledger data. No bank, sync or review-queue API should be available.
 
 On failure, preserve D1 and restore a verified compatible App Worker version under explicit authorization. Keep access denied if compatibility cannot be established. Validate login and ledger reads before re-enabling access.
 

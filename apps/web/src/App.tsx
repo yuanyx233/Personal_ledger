@@ -75,7 +75,7 @@ export function App() {
         <a className="brand-link" href="/" onClick={(event) => handleNavigate(event, "/")}>
           <AppBrand />
         </a>
-        <AppNavigation currentPath={route.path} layout="sidebar" onNavigate={handleNavigate} />
+        <AppNavigation currentPath={path} layout="sidebar" onNavigate={handleNavigate} />
         <p className="sidebar-footnote">私有 · 仅限本人</p>
       </aside>
 

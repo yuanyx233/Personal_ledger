@@ -37,7 +37,7 @@ test("renders the responsive app shell without horizontal overflow", async ({ pa
   }
 
   const visibleTargets = page.getByRole("navigation", { name: "主导航" }).getByRole("link");
-  await expect(visibleTargets).toHaveCount(5);
+  await expect(visibleTargets).toHaveCount(testInfo.project.name === "chromium-mobile" ? 5 : 6);
   for (const target of await visibleTargets.all()) {
     const box = await target.boundingBox();
     expect(box?.height).toBeGreaterThanOrEqual(44);
@@ -51,9 +51,7 @@ test("renders the responsive app shell without horizontal overflow", async ({ pa
   expect(widths.scroll).toBe(widths.client);
 });
 
-test("navigates among the five primary routes with URL and current-page semantics", async ({
-  page,
-}) => {
+test("navigates among the primary routes with URL and current-page semantics", async ({ page }) => {
   await page.goto("/");
   const navigation = page.getByRole("navigation", { name: "主导航" });
 
@@ -85,6 +83,24 @@ test("navigates among the five primary routes with URL and current-page semantic
   await page.goto("/settings");
   await expect(page.getByRole("heading", { level: 1, name: "设置" })).toBeVisible();
   await expect(navigation.getByRole("link", { name: "设置" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+});
+
+test("opens subscriptions directly from the desktop sidebar", async ({ page }, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "chromium-desktop",
+    "Subscriptions stay under settings on mobile.",
+  );
+
+  await page.goto("/");
+  const navigation = page.getByRole("navigation", { name: "主导航" });
+  await navigation.getByRole("link", { name: "订阅", exact: true }).click();
+
+  await expect(page).toHaveURL(/\/subscriptions$/);
+  await expect(page.getByRole("heading", { level: 1, name: "订阅管理" })).toBeVisible();
+  await expect(navigation.getByRole("link", { name: "订阅", exact: true })).toHaveAttribute(
     "aria-current",
     "page",
   );
