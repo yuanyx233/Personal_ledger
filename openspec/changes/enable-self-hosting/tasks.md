@@ -1,8 +1,8 @@
 ## 1. Licensing and configuration hygiene
 
-- [ ] 1.1 Confirm the licence choice with the owner (Open Question 1), then add `LICENSE` at the repository root and declare the same identifier in `package.json`.
-- [ ] 1.2 Replace the production `database_id` in `apps/web/wrangler.jsonc` with a recognizable placeholder and verify that deploying without replacing it fails with an error naming the placeholder rather than targeting another account.
-- [ ] 1.3 Record the real `database_id` in the owner's ignored local notes so the owner's own deployment path is unbroken.
+- [x] 1.1 Confirm the licence choice with the owner (Open Question 1), then add `LICENSE` at the repository root and declare the same identifier in `package.json`.
+- [x] 1.2 Replace the production `database_id` in `apps/web/wrangler.jsonc` with a recognizable placeholder and verify that deploying without replacing it fails with an error naming the placeholder rather than targeting another account.
+- [x] 1.3 Record the real `database_id` in the owner's ignored local notes so the owner's own deployment path is unbroken.
 
 ## 2. Configurable timezone
 

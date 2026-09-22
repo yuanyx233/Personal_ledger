@@ -15,8 +15,9 @@
     {
       "binding": "DB",
       "database_name": "personal-ledger-production",
-      // Replaced only during the separately authorized deployment task.
-      "database_id": "908a378d-e83b-4dac-9808-b5a0476016ef",
+      // Self-hosters: replace this with your own D1 database id.
+      // `npx wrangler d1 create personal-ledger-production` prints it.
+      "database_id": "REPLACE_ME_D1_DATABASE_ID",
       "migrations_dir": "../../migrations",
     },
   ],
