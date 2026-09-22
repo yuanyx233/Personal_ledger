@@ -259,3 +259,8 @@ backups/
 *.local.sqlite
 *.local.sqlite3
 *.local.db
+
+# The Python-template `lib/` rule above also matched apps/web/src/lib/, which is
+# application source, not build output. Without this negation a fresh clone is
+# missing modules the app imports and cannot build.
+!apps/web/src/lib/
