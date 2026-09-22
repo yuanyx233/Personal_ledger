@@ -93,7 +93,6 @@ describe("Toronto report period boundaries", () => {
     expect(resolveReportPeriod(input)).toMatchObject({
       ...expected,
       grain: input.grain,
-      timeZone: "America/Toronto",
     });
   });
 
@@ -116,14 +115,12 @@ describe("Toronto report period boundaries", () => {
         dateTo: "2025-12-31",
         grain: "MONTH",
         label: "2025-12",
-        timeZone: "America/Toronto",
       },
       previousYear: {
         dateFrom: "2025-01-01",
         dateTo: "2025-01-31",
         grain: "MONTH",
         label: "2025-01",
-        timeZone: "America/Toronto",
       },
     });
 
@@ -136,6 +133,17 @@ describe("Toronto report period boundaries", () => {
       previousPeriod: { dateFrom: "2024-02-26", dateTo: "2024-02-28" },
       previousYear: { dateFrom: "2023-02-28", dateTo: "2023-03-02" },
     });
+  });
+
+  it("carries no time zone, because period resolution is pure calendar arithmetic", () => {
+    const period = resolveReportPeriod({ grain: "MONTH", period: "2026-01" });
+    expect(period).toEqual({
+      dateFrom: "2026-01-01",
+      dateTo: "2026-01-31",
+      grain: "MONTH",
+      label: "2026-01",
+    });
+    expect(Object.keys(period)).not.toContain("timeZone");
   });
 });
 
@@ -372,7 +380,6 @@ describe("spending report API contract", () => {
           dateTo: "2026-01-31",
           grain: "MONTH",
           label: "2026-01",
-          timeZone: "America/Toronto",
         },
         query: { grain: "MONTH", merchantLimit: 20, period: "2026-01" },
       },
@@ -471,7 +478,6 @@ describe("cash-flow report API contract", () => {
       dateTo: "2026-01-31",
       grain: "MONTH",
       label: "2026-01",
-      timeZone: "America/Toronto",
     } as const;
     const comparison = {
       absoluteChangeMinor: 100,

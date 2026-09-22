@@ -9,5 +9,6 @@ export * from "./merchant-categorization";
 export * from "./transaction-csv-export";
 export * from "./budgets";
 export * from "./subscriptions";
+export * from "./time-zone";
 
 export * from "./import-categorization";

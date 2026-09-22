@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { timeZoneSchema } from "./time-zone";
 
 import { budgetRecordSchema } from "./budgets";
 
@@ -271,7 +272,7 @@ export const fullJsonExportSchema = z
     exportedAt: timestampSchema,
     recordCounts: recordCountsSchema,
     schemaVersion: z.literal(5),
-    timezone: z.literal("America/Toronto"),
+    timezone: timeZoneSchema,
   })
   .superRefine((document, context) => {
     for (const key of Object.keys(document.data) as Array<keyof FullJsonExportData>) {
@@ -305,7 +306,7 @@ function recordCounts(data: FullJsonExportData): FullJsonExport["recordCounts"] 
 export function createFullJsonExport(input: {
   data: FullJsonExportData;
   exportedAt: string;
-  timezone: "America/Toronto";
+  timezone: string;
 }): FullJsonExport {
   const normalizedData = fullJsonExportDataSchema.parse(input.data);
   const counts = recordCounts(normalizedData);

@@ -5,7 +5,7 @@ import {
   subscriptionCreateSchema,
   subscriptionMutationSchema,
   subscriptionRecordSchema,
-  torontoDate,
+  ledgerDate,
   type SubscriptionRecord,
 } from "@ledger/domain";
 
@@ -23,7 +23,10 @@ export class SubscriptionError extends Error {
 }
 
 export class SubscriptionRepository {
-  constructor(private readonly database: D1Database) {}
+  constructor(
+    private readonly database: D1Database,
+    private readonly timeZone: string,
+  ) {}
 
   async find(id: string): Promise<SubscriptionRecord | null> {
     const row = await this.database
@@ -127,7 +130,7 @@ export class SubscriptionRepository {
           .bind(
             value.effectiveDate,
             value.effectiveDate,
-            torontoDate(new Date(now)),
+            ledgerDate(new Date(now), this.timeZone),
             value.effectiveDate,
             now,
             id,
@@ -193,7 +196,7 @@ export class SubscriptionRepository {
     const date = plan.nextChargeDate;
     if (
       plan.status !== "ACTIVE" ||
-      date > torontoDate(new Date(now)) ||
+      date > ledgerDate(new Date(now), this.timeZone) ||
       (plan.cancellationEffectiveDate !== null && date >= plan.cancellationEffectiveDate)
     )
       return false;
@@ -268,7 +271,7 @@ export class SubscriptionRepository {
   }
 
   async generateDue(now: string, onlyId?: string): Promise<number> {
-    const today = torontoDate(new Date(now));
+    const today = ledgerDate(new Date(now), this.timeZone);
     const { results } = await this.database
       .prepare(
         `SELECT ${COLUMNS} FROM subscriptions

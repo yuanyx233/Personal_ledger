@@ -119,6 +119,45 @@ describe("versioned full JSON export", () => {
     expect(fullJsonExportSchema.parse(document)).toEqual(document);
   });
 
+  it("keeps schema version 5 while accepting any configured zone", () => {
+    const berlin = createFullJsonExport({
+      data: EMPTY_DATA,
+      exportedAt: "2026-07-17T12:00:00.000Z",
+      timezone: "Europe/Berlin",
+    });
+    expect(berlin.timezone).toBe("Europe/Berlin");
+    expect(berlin.schemaVersion).toBe(5);
+
+    const toronto = createFullJsonExport({
+      data: EMPTY_DATA,
+      exportedAt: "2026-07-17T12:00:00.000Z",
+      timezone: "America/Toronto",
+    });
+    expect(toronto.timezone).toBe("America/Toronto");
+    expect(toronto.schemaVersion).toBe(5);
+  });
+
+  it("still validates a backup written before the zone became configurable", () => {
+    const beforeChange = createFullJsonExport({
+      data: EMPTY_DATA,
+      exportedAt: "2026-07-17T12:00:00.000Z",
+      timezone: "America/Toronto",
+    });
+    expect(fullJsonExportSchema.safeParse(beforeChange).success).toBe(true);
+  });
+
+  it("rejects an unusable zone rather than storing it in a backup", () => {
+    for (const timezone of ["", "Not/AZone", "+05:00"]) {
+      expect(() =>
+        createFullJsonExport({
+          data: EMPTY_DATA,
+          exportedAt: "2026-07-17T12:00:00.000Z",
+          timezone,
+        }),
+      ).toThrow();
+    }
+  });
+
   it("carries no removed bank-synchronization record set", () => {
     const document = createFullJsonExport({
       data: EMPTY_DATA,

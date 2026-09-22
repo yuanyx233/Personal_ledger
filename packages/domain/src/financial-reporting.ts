@@ -3,7 +3,6 @@ import { merchantFamilySchema } from "./import-categorization";
 
 import { calendarDateSchema, currencyCodeSchema } from "./api-contracts";
 
-export const REPORT_TIME_ZONE = "America/Toronto" as const;
 export const MAX_CUSTOM_REPORT_DAYS = 730;
 
 const yearSchema = z.string().regex(/^(?:19|[2-9][0-9])[0-9]{2}$/);
@@ -149,7 +148,6 @@ export interface ResolvedReportPeriod {
   dateTo: string;
   grain: ReportPeriodInput["grain"];
   label: string;
-  timeZone: typeof REPORT_TIME_ZONE;
 }
 
 export const spendingReportDrillDownSchema = z
@@ -183,7 +181,6 @@ const resolvedReportPeriodSchema = z.strictObject({
   dateTo: calendarDateSchema,
   grain: z.enum(["MONTH", "QUARTER", "YEAR", "CUSTOM"]),
   label: z.string().min(1).max(64),
-  timeZone: z.literal(REPORT_TIME_ZONE),
 });
 
 export const reportFreshnessSchema = z.object({ generatedAt: z.iso.datetime({ offset: true }) });
@@ -246,7 +243,6 @@ export function resolveReportPeriod(input: unknown): ResolvedReportPeriod {
       dateTo: period.dateTo,
       grain: period.grain,
       label: `${period.dateFrom}/${period.dateTo}`,
-      timeZone: REPORT_TIME_ZONE,
     };
   }
 
@@ -257,7 +253,6 @@ export function resolveReportPeriod(input: unknown): ResolvedReportPeriod {
       dateTo: `${period.period}-12-31`,
       grain: period.grain,
       label: period.period,
-      timeZone: REPORT_TIME_ZONE,
     };
   }
   if (period.grain === "QUARTER") {
@@ -269,7 +264,6 @@ export function resolveReportPeriod(input: unknown): ResolvedReportPeriod {
       dateTo: `${String(year).padStart(4, "0")}-${String(endMonth).padStart(2, "0")}-${lastDayOfMonth(year, endMonth)}`,
       grain: period.grain,
       label: period.period,
-      timeZone: REPORT_TIME_ZONE,
     };
   }
 
@@ -279,7 +273,6 @@ export function resolveReportPeriod(input: unknown): ResolvedReportPeriod {
     dateTo: `${period.period}-${lastDayOfMonth(year, month)}`,
     grain: period.grain,
     label: period.period,
-    timeZone: REPORT_TIME_ZONE,
   };
 }
 

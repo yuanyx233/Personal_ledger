@@ -220,7 +220,6 @@ describe("FinancialReportRepository", () => {
       dateTo: "2026-01-31",
       grain: "MONTH",
       label: "2026-01",
-      timeZone: "America/Toronto",
     });
     expect(result.currencies).toEqual([
       {

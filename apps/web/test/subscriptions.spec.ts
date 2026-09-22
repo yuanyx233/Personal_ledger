@@ -23,7 +23,7 @@ const env = {
   CSRF_HMAC_KEY: key,
   DB: cloudflareEnv.DB,
 } as unknown as AppEnv;
-const repo = new SubscriptionRepository(cloudflareEnv.DB);
+const repo = new SubscriptionRepository(cloudflareEnv.DB, env.APP_TIMEZONE);
 const fields = {
   name: "Music",
   accountLabel: "RBC Credit",

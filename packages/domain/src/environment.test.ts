@@ -29,6 +29,34 @@ describe("environment boundaries", () => {
       }).success,
     ).toBe(false);
   });
+  it("accepts any named IANA zone so the ledger can be deployed outside Toronto", () => {
+    expect(
+      appWorkerEnvSchema.parse({ ...configuration, APP_TIMEZONE: "Europe/Berlin" }).APP_TIMEZONE,
+    ).toBe("Europe/Berlin");
+    expect(
+      publicClientEnvSchema.parse({
+        VITE_API_BASE_PATH: "/api/v1",
+        VITE_APP_TIMEZONE: "Asia/Shanghai",
+      }).VITE_APP_TIMEZONE,
+    ).toBe("Asia/Shanghai");
+  });
+
+  it("fails loudly instead of falling back when the configured zone is unusable", () => {
+    for (const APP_TIMEZONE of ["", "Not/AZone", "+05:00"]) {
+      expect(appWorkerEnvSchema.safeParse({ ...configuration, APP_TIMEZONE }).success).toBe(false);
+    }
+    expect(
+      publicClientEnvSchema.safeParse({ VITE_API_BASE_PATH: "/api/v1", VITE_APP_TIMEZONE: "" })
+        .success,
+    ).toBe(false);
+  });
+
+  it("canonicalises the configured zone so both halves compare equal", () => {
+    expect(
+      appWorkerEnvSchema.parse({ ...configuration, APP_TIMEZONE: "america/toronto" }).APP_TIMEZONE,
+    ).toBe("America/Toronto");
+  });
+
   it("keeps browser configuration public and strict", () => {
     const values = { VITE_API_BASE_PATH: "/api/v1", VITE_APP_TIMEZONE: "America/Toronto" };
     expect(publicClientEnvSchema.parse(values)).toEqual(values);

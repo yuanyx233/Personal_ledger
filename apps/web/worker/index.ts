@@ -4,7 +4,7 @@ import {
   budgetSettingSchema,
   subscriptionCreateSchema,
   subscriptionMutationSchema,
-  torontoDate,
+  ledgerDate,
   CsvImportError,
   FullJsonExportError,
   TransactionCsvExportError,
@@ -98,7 +98,7 @@ export interface AppEnv {
   ACCESS_AUD: string;
   ACCESS_TEAM_DOMAIN: string;
   API_RATE_LIMITER: RateLimit;
-  APP_TIMEZONE: "America/Toronto";
+  APP_TIMEZONE: string;
   ASSETS: Fetcher;
   CSRF_HMAC_KEY: string;
   DB: D1Database;
@@ -110,7 +110,7 @@ export type AccessVerifierFactory = (config: AccessVerifierConfig) => AccessRequ
 export type FullJsonExportFileFactory = (input: {
   database: D1Database;
   exportedAt: string;
-  timezone: "America/Toronto";
+  timezone: string;
 }) => Promise<string>;
 
 const NOOP_LOGGER: StructuredLogger = { write: () => false };
@@ -491,7 +491,9 @@ export function createAppWorker(
   return {
     async scheduled(_controller: ScheduledController, env: AppEnv): Promise<void> {
       try {
-        const generated = await new SubscriptionRepository(env.DB).generateDue(now().toISOString());
+        const generated = await new SubscriptionRepository(env.DB, env.APP_TIMEZONE).generateDue(
+          now().toISOString(),
+        );
         logger.write({
           event: "SUBSCRIPTION_SCHEDULE",
           level: "INFO",
@@ -640,13 +642,13 @@ export function createAppWorker(
           if (id !== null && !/^subscription-[A-Za-z0-9_-]{1,147}$/.test(id))
             return secure(notFound());
           try {
-            const repository = new SubscriptionRepository(env.DB);
+            const repository = new SubscriptionRepository(env.DB, env.APP_TIMEZONE);
             const timestamp = now().toISOString();
             if (request.method === "GET")
               return secure(
                 Response.json({
                   data: await repository.list(),
-                  meta: { today: torontoDate(new Date(timestamp)) },
+                  meta: { today: ledgerDate(new Date(timestamp), env.APP_TIMEZONE) },
                 }),
               );
             const parsed = (
@@ -673,7 +675,7 @@ export function createAppWorker(
             const subscription = (await repository.find(result.subscription.id))!;
             catchUpPending ||=
               subscription.status === "ACTIVE" &&
-              subscription.nextChargeDate <= torontoDate(new Date(timestamp));
+              subscription.nextChargeDate <= ledgerDate(new Date(timestamp), env.APP_TIMEZONE);
             return secure(
               Response.json(
                 { data: { ...result, subscription }, meta: { catchUpPending } },

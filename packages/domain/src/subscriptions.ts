@@ -57,9 +57,9 @@ export type SubscriptionRecord = z.infer<typeof subscriptionRecordSchema>;
 export type SubscriptionCharge = z.infer<typeof subscriptionChargeSchema>;
 export type SubscriptionMutation = z.infer<typeof subscriptionMutationSchema>;
 
-export function torontoDate(now: Date): string {
+export function ledgerDate(now: Date, timeZone: string): string {
   return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Toronto",
+    timeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
