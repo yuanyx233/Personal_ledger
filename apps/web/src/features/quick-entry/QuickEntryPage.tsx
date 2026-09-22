@@ -11,7 +11,8 @@ import { DataState } from "../../components/DataState/DataState";
 import { BrowserApiError, writeApi } from "../../lib/browser-api";
 import { NewMerchantConfirmation } from "./NewMerchantConfirmation";
 import { InstallmentFields } from "./InstallmentFields";
-import { DEFAULT_QUICK_ENTRY_ACCOUNT, torontoCalendarDate } from "./quick-entry-preferences";
+import { LEDGER_TIME_ZONE } from "../../lib/app-config";
+import { DEFAULT_QUICK_ENTRY_ACCOUNT, ledgerCalendarDate } from "./quick-entry-preferences";
 import { ReimbursementFields } from "../transactions/ReimbursementFields";
 
 function formValue(form: FormData, name: string) {
@@ -190,7 +191,7 @@ export function QuickEntryPage({ online, route }: { online: boolean; route: AppR
                 <label>
                   日期
                   <input
-                    defaultValue={torontoCalendarDate(new Date())}
+                    defaultValue={ledgerCalendarDate(new Date(), LEDGER_TIME_ZONE)}
                     name="postedDate"
                     required
                     type="date"

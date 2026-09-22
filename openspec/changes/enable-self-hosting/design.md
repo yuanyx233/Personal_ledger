@@ -122,6 +122,20 @@ category-system-transfer  'Transfer'       system_key = 'TRANSFER'  editable = 0
 - 默认分类的语言在**安装时**决定：自托管者播种时选择语言，之后随时可自行改名。
 - 已有实例不做任何改写。
 
+### D8. 报表周期不再携带时区字段 —— 所有者于 2026-09-22 选定
+
+实现任务 2.3 时实测发现：`resolveReportPeriod` 的日期运算**完全不依赖时区**，全部基于 `Date.UTC` 的纯日历字符串算术，函数体内没有任何 `Intl` 或偏移量计算。其返回的 `timeZone` 字段只是附加的元数据标签。进一步检索确认**该字段没有任何消费者**，`REPORT_TIME_ZONE` 也没有 `financial-reporting.ts` 之外的使用者。
+
+**选择**：从 `ResolvedReportPeriod` 与 `resolvedReportPeriodSchema` 中移除 `timeZone` 字段，并移除 `REPORT_TIME_ZONE` 常量。需要展示日历时区的界面直接从配置读取。
+
+**理由**：为了让一个纯函数携带它根本不使用的标签而给它增加必填配置参数，等于把配置耦合进不该耦合的层。该字段既无计算作用也无消费者，属于死重。
+
+**连带收益**：`resolveReportPeriod` 签名不变，因此前端 3 处调用点不受影响，任务 2.3 与 2.4 不再必须捆绑落地。
+
+**备选**：给 `resolveReportPeriod` 增加必填时区参数以保持 API 契约不变（方案 A）。代价是 6 个调用点全部改动，且不能设默认值 —— 任何默认值都会重新引入 spec 明令禁止的"静默回退到 Toronto"。
+
+**契约影响**：报表响应中不再出现 `period.timeZone`。因无消费者，前端与备份格式均不受影响。
+
 ### D7. 文档分家
 
 `docs/free-preview-deployment.md` 保留为所有者运维记录（含版本 ID、发布证据、授权条款），新增 `docs/self-hosting.md` 作为安装指南，两者互不引用对方的专有内容。安装指南须显式说明 Cloudflare Access 是**必需前置**而非可选项 —— 没有它应用完全裸奔，因为 Worker 只验 Access JWT，不存在回退鉴权。

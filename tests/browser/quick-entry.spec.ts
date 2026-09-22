@@ -1,6 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { torontoCalendarDate } from "../../apps/web/src/features/quick-entry/quick-entry-preferences";
+import { ledgerCalendarDate } from "../../apps/web/src/features/quick-entry/quick-entry-preferences";
+
+// The build under test is configured by apps/web/.env.
+const BUILD_TIME_ZONE = "America/Toronto";
 
 const browserProblems = new WeakMap<Page, string[]>();
 
@@ -170,7 +173,9 @@ test("opens a purchase-ready form at /add with safe editable defaults", async ({
   await expect(page.getByLabel("金额")).toHaveAttribute("inputmode", "decimal");
   await expect(page.getByLabel("商户或描述")).toBeVisible();
   await expect(page.getByLabel("账户")).toHaveValue("RBC Credit");
-  await expect(page.getByLabel("日期")).toHaveValue(torontoCalendarDate(new Date()));
+  await expect(page.getByLabel("日期")).toHaveValue(
+    ledgerCalendarDate(new Date(), BUILD_TIME_ZONE),
+  );
   await expect(page.getByLabel("币种")).toHaveValue("CAD");
   await expect(page.getByLabel("方向")).toHaveValue("OUTFLOW");
   await expect(page.getByRole("button", { name: "记入账本" })).toBeVisible();
@@ -401,7 +406,7 @@ test("saves a known merchant once without persisting financial fields", async ({
     currency: "CAD",
     description: "Corner Cafe",
     direction: "OUTFLOW",
-    postedDate: torontoCalendarDate(new Date()),
+    postedDate: ledgerCalendarDate(new Date(), BUILD_TIME_ZONE),
   });
   expect(
     await page.evaluate(() => ({

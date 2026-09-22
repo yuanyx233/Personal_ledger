@@ -6,6 +6,7 @@
     "types": ["node"]
   },
   "include": [
+    "apps/web/src/vite-env.d.ts",
     "playwright.config.ts",
     "tests/browser/**/*.ts",
     "tests/config/**/*.ts",

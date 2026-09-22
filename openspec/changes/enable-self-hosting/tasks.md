@@ -6,10 +6,10 @@
 
 ## 2. Configurable timezone
 
-- [ ] 2.1 Add an IANA timezone validator in `packages/domain` using `Intl.DateTimeFormat` construction, with tests covering valid identifiers, invalid identifiers, and empty values.
-- [ ] 2.2 Relax `APP_TIMEZONE` and `VITE_APP_TIMEZONE` in `packages/domain/src/environment.ts` from `z.literal` to the validator; verify startup fails loudly on an invalid value.
-- [ ] 2.3 Replace the fixed `REPORT_TIME_ZONE` and the remaining Toronto literals in `financial-reporting.ts` and `subscriptions.ts` with the configured value threaded through existing call sites.
-- [ ] 2.4 Replace the fixed timezone in `apps/web/src/features/analysis/analysis-period.ts` and `quick-entry/quick-entry-preferences.ts`, and remove the hardcoded timezone label in `AnalysisControls.tsx`.
+- [x] 2.1 Add an IANA timezone validator in `packages/domain` using `Intl.DateTimeFormat` construction, with tests covering valid identifiers, invalid identifiers, and empty values.
+- [x] 2.2 Relax `APP_TIMEZONE` and `VITE_APP_TIMEZONE` in `packages/domain/src/environment.ts` from `z.literal` to the validator; verify startup fails loudly on an invalid value.
+- [x] 2.3 Replace the fixed `REPORT_TIME_ZONE` and the remaining Toronto literals in `financial-reporting.ts` and `subscriptions.ts` with the configured value threaded through existing call sites.
+- [x] 2.4 Replace the fixed timezone in `apps/web/src/features/analysis/analysis-period.ts` and `quick-entry/quick-entry-preferences.ts`, and remove the hardcoded timezone label in `AnalysisControls.tsx`.
 - [ ] 2.5 Relax the `timezone` literal in the bootstrap contract (`api-contracts.ts`) and add the frontend/Worker agreement check that blocks the UI with both values on mismatch.
 - [ ] 2.6 Re-run the existing date-sensitive domain, Worker, and browser tests parameterised over `America/Toronto` and one other timezone; confirm Toronto results are bit-for-bit unchanged.
 
@@ -22,7 +22,7 @@
 
 ## 4. Backup compatibility
 
-- [ ] 4.1 Relax the `timezone` and `currency` constraints in the v5 export schema without changing `schemaVersion`; prove a pre-change backup restores unchanged.
+- [ ] 4.1 Relax the `currency` constraint in the v5 export schema without changing `schemaVersion`; prove a pre-change backup restores unchanged. (The `timezone` half landed with task 2.3, which could not compile against a literal-typed export field; covered by tests in `full-json-export.test.ts`.)
 - [ ] 4.2 Add the restore-time check that reports a timezone mismatch between the backup and the instance configuration before any write.
 - [ ] 4.3 Confirm `remote-migration-guard` and the documented v4-and-earlier rejection boundary are unaffected.
 

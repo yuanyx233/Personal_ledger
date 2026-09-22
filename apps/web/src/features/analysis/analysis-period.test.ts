@@ -15,6 +15,14 @@ describe("analysis period navigation", () => {
     expect(currentPeriod("YEAR", now)).toBe("2025");
   });
 
+  it("follows the configured zone instead of a built-in one", () => {
+    const now = new Date("2026-01-01T02:00:00.000Z");
+    expect(currentPeriod("MONTH", now, "America/Toronto")).toBe("2025-12");
+    expect(currentPeriod("MONTH", now, "Europe/Berlin")).toBe("2026-01");
+    expect(currentPeriod("YEAR", now, "Europe/Berlin")).toBe("2026");
+    expect(currentPeriod("QUARTER", now, "Europe/Berlin")).toBe("2026-Q1");
+  });
+
   it("safely falls back from invalid or overlong custom ranges", () => {
     const now = new Date("2026-07-17T12:00:00.000Z");
     expect(parseAnalysisQuery("?grain=MONTH&period=not-a-month", now)).toEqual({

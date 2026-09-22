@@ -1,10 +1,10 @@
 export const DEFAULT_QUICK_ENTRY_ACCOUNT = "RBC Credit";
 
-export function torontoCalendarDate(date: Date): string {
+export function ledgerCalendarDate(date: Date, timeZone: string): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
     day: "2-digit",
     month: "2-digit",
-    timeZone: "America/Toronto",
+    timeZone,
     year: "numeric",
   }).formatToParts(date);
   const value = (type: Intl.DateTimeFormatPartTypes) =>

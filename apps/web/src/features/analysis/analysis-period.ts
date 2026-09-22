@@ -1,5 +1,7 @@
 import { resolveReportPeriod } from "@ledger/domain";
 
+import { LEDGER_TIME_ZONE } from "../../lib/app-config";
+
 export type AnalysisGrain = "CUSTOM" | "MONTH" | "QUARTER" | "YEAR";
 
 type AccountFilter = {
@@ -16,18 +18,22 @@ export type AnalysisPeriodInput =
   | { dateFrom: string; dateTo: string; grain: "CUSTOM" }
   | { grain: "MONTH" | "QUARTER" | "YEAR"; period: string };
 
-function torontoParts(now = new Date()) {
+function calendarParts(now = new Date(), timeZone = LEDGER_TIME_ZONE) {
   const parts = new Intl.DateTimeFormat("en-CA", {
     day: "2-digit",
     month: "2-digit",
-    timeZone: "America/Toronto",
+    timeZone,
     year: "numeric",
   }).formatToParts(now);
   return Object.fromEntries(parts.map(({ type, value }) => [type, value]));
 }
 
-export function currentPeriod(grain: Exclude<AnalysisGrain, "CUSTOM">, now = new Date()) {
-  const parts = torontoParts(now);
+export function currentPeriod(
+  grain: Exclude<AnalysisGrain, "CUSTOM">,
+  now = new Date(),
+  timeZone = LEDGER_TIME_ZONE,
+) {
+  const parts = calendarParts(now, timeZone);
   if (grain === "YEAR") return parts.year!;
   if (grain === "QUARTER") return `${parts.year}-Q${Math.ceil(Number(parts.month) / 3)}`;
   return `${parts.year}-${parts.month}`;
@@ -114,7 +120,7 @@ export function shiftedAnalysisQuery(query: AnalysisQuery, offset: number): Anal
 
 export function grainQuery(grain: AnalysisGrain, query: AnalysisQuery, now = new Date()) {
   if (grain === "CUSTOM") {
-    const parts = torontoParts(now);
+    const parts = calendarParts(now);
     const dateTo = `${parts.year}-${parts.month}-${parts.day}`;
     const from = new Date(`${dateTo}T00:00:00.000Z`);
     from.setUTCDate(from.getUTCDate() - 29);

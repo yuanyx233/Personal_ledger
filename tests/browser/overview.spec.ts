@@ -23,7 +23,6 @@ function periodMeta(period: string) {
     dateTo: `${period}-${lastDay}`,
     grain: "MONTH",
     label: period,
-    timeZone: "America/Toronto",
   };
 }
 

@@ -19,7 +19,6 @@ function monthMeta(period: string) {
     dateTo: `${period}-${new Date(Date.UTC(year, month, 0)).getUTCDate()}`,
     grain: "MONTH",
     label: period,
-    timeZone: "America/Toronto",
   };
 }
 
@@ -43,7 +42,6 @@ function periodMeta(grain: string, period: string) {
       dateTo: `${period}-12-31`,
       grain,
       label: period,
-      timeZone: "America/Toronto",
     };
   }
   const [year, quarterText] = period.split("-Q") as [string, string];
@@ -57,7 +55,6 @@ function periodMeta(grain: string, period: string) {
     ).getUTCDate()}`,
     grain,
     label: period,
-    timeZone: "America/Toronto",
   };
 }
 
@@ -103,7 +100,6 @@ function cashFlowResponse(url: URL) {
           dateTo,
           grain,
           label: `${dateFrom}/${dateTo}`,
-          timeZone: "America/Toronto",
         }
       : periodMeta(grain, period!);
   const previousPeriod =
@@ -117,7 +113,6 @@ function cashFlowResponse(url: URL) {
               dateTo: "2025-12-31",
               grain,
               label: "2025-12-01/2025-12-31",
-              timeZone: "America/Toronto",
             }
           : periodMeta("YEAR", String(Number(period) - 1));
   const previousYear =
@@ -131,7 +126,6 @@ function cashFlowResponse(url: URL) {
               dateTo: "2025-01-31",
               grain,
               label: "2025-01-01/2025-01-31",
-              timeZone: "America/Toronto",
             }
           : periodMeta("YEAR", String(Number(period) - 1));
   return {
@@ -161,7 +155,6 @@ function spendingResponse(url: URL) {
           dateTo,
           grain,
           label: `${dateFrom}/${dateTo}`,
-          timeZone: "America/Toronto",
         }
       : periodMeta(grain, period!);
   const baseDrillDown = {

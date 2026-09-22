@@ -15,6 +15,17 @@ The ledger timezone SHALL be a deployment configuration value accepting any IANA
 - **WHEN** an instance is configured with a value that is not a valid IANA timezone identifier
 - **THEN** environment validation fails at startup with an error naming the offending variable, and the application does not serve requests with a silently substituted timezone.
 
+### Requirement: Report periods carry no timezone label
+Report period resolution is pure calendar arithmetic and MUST NOT accept or return a timezone. Interfaces that tell the viewer which calendar a report follows SHALL read the configured timezone directly rather than receive it through the report payload.
+
+#### Scenario: Resolved period shape
+- **WHEN** a report period is resolved for any grain
+- **THEN** the result contains only the date range, grain, and label, and the same input yields the same range regardless of the instance's configured timezone.
+
+#### Scenario: Interface still names the calendar
+- **WHEN** the analysis view states which calendar the period follows
+- **THEN** it names the instance's configured timezone, not a value carried in the report response.
+
 ### Requirement: Frontend and Worker timezone agreement
 The browser-side timezone value and the Worker-side timezone value SHALL be validated as equal. A mismatch MUST fail loudly rather than produce dates that disagree between the two halves of the application.
 

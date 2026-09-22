@@ -12,6 +12,8 @@ import {
 } from "./analysis-period";
 import { resolveReportPeriod } from "@ledger/domain";
 
+import { LEDGER_TIME_ZONE } from "../../lib/app-config";
+
 type Account = AccountOptionsResponse["data"]["accounts"][number];
 type NavigateSearch = (event: MouseEvent<HTMLAnchorElement>, query: AnalysisQuery) => void;
 type ApplyQuery = (query: AnalysisQuery) => void;
@@ -85,7 +87,7 @@ export function AnalysisControls({
 
       <div className="analysis-period-heading">
         <div>
-          <p id="analysis-controls-title">America/Toronto 日历</p>
+          <p id="analysis-controls-title">{LEDGER_TIME_ZONE} 日历</p>
           <strong>{period.label}</strong>
         </div>
         {query.grain === "CUSTOM" ? null : (
