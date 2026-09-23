@@ -1,5 +1,7 @@
 import type { FormEvent } from "react";
 
+import { LEDGER_CURRENCIES } from "../../lib/app-config";
+
 import type { AppRoute } from "../../app-routes";
 import { DataState } from "../../components/DataState/DataState";
 import { TransactionViews } from "./TransactionViews";
@@ -92,8 +94,11 @@ export function TransactionsPage({ online, route }: { online: boolean; route: Ap
           币种
           <select defaultValue={search.get("currency") ?? ""} name="currency">
             <option value="">全部</option>
-            <option value="CAD">CAD</option>
-            <option value="USD">USD</option>
+            {LEDGER_CURRENCIES.map((code) => (
+              <option key={code} value={code}>
+                {code}
+              </option>
+            ))}
           </select>
         </label>
         <label>

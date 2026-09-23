@@ -1,4 +1,4 @@
-import { canonicalTimeZone } from "@ledger/domain";
+import { canonicalTimeZone, isCentesimalCurrency } from "@ledger/domain";
 
 // The browser bundle carries the ledger time zone so the first paint can already
 // compute calendar days without waiting for a response. A wrong value would shift
@@ -37,3 +37,26 @@ export function assertTimeZoneAgreement(workerTimeZone: string, bundled = LEDGER
     throw new TimeZoneMismatchError(bundled, workerTimeZone);
   }
 }
+
+// The currencies this deployment's accounts are denominated in — typically one or
+// two. Cross-border spending arrives already converted by the card issuer, so this
+// is not a list of currencies the owner might encounter; it is what their accounts
+// are held in. The entry controls offer exactly these.
+const DEFAULT_LEDGER_CURRENCIES = ["CAD", "USD"] as const;
+
+export function readLedgerCurrencies(value: string | undefined): string[] {
+  const declared = (value ?? "").trim();
+  if (declared.length === 0) return [...DEFAULT_LEDGER_CURRENCIES];
+
+  const codes = declared.split(",").map((code) => code.trim());
+  const unusable = codes.filter((code) => !isCentesimalCurrency(code));
+  if (unusable.length > 0) {
+    throw new Error(
+      `VITE_LEDGER_CURRENCIES must list three-letter currencies whose minor unit is 1/100, ` +
+        `rejected ${JSON.stringify(unusable)}`,
+    );
+  }
+  return [...new Set(codes)];
+}
+
+export const LEDGER_CURRENCIES = readLedgerCurrencies(import.meta.env.VITE_LEDGER_CURRENCIES);

@@ -16,6 +16,7 @@ const filledSecretSchema = z
 export const publicClientEnvSchema = z.strictObject({
   VITE_API_BASE_PATH: z.literal("/api/v1"),
   VITE_APP_TIMEZONE: timeZoneSchema,
+  VITE_LEDGER_CURRENCIES: z.string().optional(),
 });
 export const appWorkerEnvSchema = z.object({
   ACCESS_AUD: filledSecretSchema,

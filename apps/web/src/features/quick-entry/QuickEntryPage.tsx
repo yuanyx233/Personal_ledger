@@ -11,7 +11,7 @@ import { DataState } from "../../components/DataState/DataState";
 import { BrowserApiError, writeApi } from "../../lib/browser-api";
 import { NewMerchantConfirmation } from "./NewMerchantConfirmation";
 import { InstallmentFields } from "./InstallmentFields";
-import { LEDGER_TIME_ZONE } from "../../lib/app-config";
+import { LEDGER_CURRENCIES, LEDGER_TIME_ZONE } from "../../lib/app-config";
 import { DEFAULT_QUICK_ENTRY_ACCOUNT, ledgerCalendarDate } from "./quick-entry-preferences";
 import { ReimbursementFields } from "../transactions/ReimbursementFields";
 
@@ -50,7 +50,7 @@ export function QuickEntryPage({ online, route }: { online: boolean; route: AppR
   const [newMerchantPreview, setNewMerchantPreview] = useState<NewMerchantPreview | null>(null);
   const [busy, setBusy] = useState(false);
   const [amount, setAmount] = useState("");
-  const [currency, setCurrency] = useState("CAD");
+  const [currency, setCurrency] = useState(LEDGER_CURRENCIES[0]!);
   const [direction, setDirection] = useState("OUTFLOW");
   const [reimbursementAmount, setReimbursementAmount] = useState<string | null>(null);
   const [loginRequired, setLoginRequired] = useState(false);
@@ -63,7 +63,7 @@ export function QuickEntryPage({ online, route }: { online: boolean; route: AppR
 
   function finish(text: string) {
     setAmount("");
-    setCurrency("CAD");
+    setCurrency(LEDGER_CURRENCIES[0]!);
     setDirection("OUTFLOW");
     setReimbursementAmount(null);
     setNewMerchantPreview(null);
@@ -204,8 +204,11 @@ export function QuickEntryPage({ online, route }: { online: boolean; route: AppR
                     onChange={(event) => setCurrency(event.currentTarget.value)}
                     name="currency"
                   >
-                    <option value="CAD">CAD</option>
-                    <option value="USD">USD</option>
+                    {LEDGER_CURRENCIES.map((code) => (
+                      <option key={code} value={code}>
+                        {code}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 <label>

@@ -1,6 +1,8 @@
 import type { SpendingReportSection } from "@ledger/domain";
 import { useState } from "react";
 
+import { LEDGER_CURRENCIES } from "../../lib/app-config";
+
 import { BudgetRow } from "./BudgetRow";
 import { useBudgets } from "./useBudgets";
 
@@ -12,11 +14,10 @@ export function MonthlyBudgets({
   sections: SpendingReportSection[];
 }) {
   const { state, saving, notice, save, retry } = useBudgets(month);
-  const [currency, setCurrency] = useState(sections[0]?.currency ?? "CAD");
+  const [currency, setCurrency] = useState(sections[0]?.currency ?? LEDGER_CURRENCIES[0]!);
   const currencies = [
     ...new Set([
-      "CAD",
-      "USD",
+      ...LEDGER_CURRENCIES,
       ...sections.map((section) => section.currency),
       ...(state.status === "ready" ? state.data.budgets.map((budget) => budget.currency) : []),
     ]),

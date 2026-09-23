@@ -6,6 +6,8 @@ import {
 import type { CategoriesResponse } from "@ledger/domain/api-contracts";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
+import { LEDGER_CURRENCIES } from "../../lib/app-config";
+
 function formText(data: FormData, name: string): string {
   const value = data.get(name);
   return typeof value === "string" ? value : "";
@@ -93,9 +95,12 @@ export function SubscriptionForm({
           </label>
           <label>
             币种
-            <select name="currency" defaultValue={plan?.currency ?? "CAD"}>
-              <option value="CAD">CAD</option>
-              <option value="USD">USD</option>
+            <select name="currency" defaultValue={plan?.currency ?? LEDGER_CURRENCIES[0]}>
+              {LEDGER_CURRENCIES.map((code) => (
+                <option key={code} value={code}>
+                  {code}
+                </option>
+              ))}
             </select>
           </label>
           <label>
