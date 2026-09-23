@@ -1,4 +1,6 @@
 import * as z from "zod";
+
+import { timeZoneSchema } from "./time-zone";
 import { merchantFamilySchema } from "./import-categorization";
 
 import { transactionPaymentMetadataSchema } from "./e-transfer";
@@ -95,7 +97,7 @@ export const sessionResponseSchema = apiSuccessEnvelopeSchema(
   z.strictObject({
     csrfToken: csrfTokenSchema,
     identity: z.strictObject({ email: z.email() }),
-    timezone: z.literal("America/Toronto"),
+    timezone: timeZoneSchema,
   }),
   z.strictObject({}),
 );

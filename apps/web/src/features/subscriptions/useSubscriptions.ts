@@ -3,12 +3,10 @@ import {
   type SubscriptionMutation,
   type SubscriptionFields,
 } from "@ledger/domain";
-import {
-  categoriesResponseSchema,
-  sessionResponseSchema,
-  type CategoriesResponse,
-} from "@ledger/domain/api-contracts";
+import { categoriesResponseSchema, type CategoriesResponse } from "@ledger/domain/api-contracts";
 import { useEffect, useRef, useState } from "react";
+
+import { readSession } from "../../lib/browser-api";
 
 type Data = ReturnType<typeof subscriptionsResponseSchema.parse> & {
   categories: CategoriesResponse["data"]["categories"];
@@ -54,7 +52,7 @@ export function useSubscriptions() {
     setSaving(true);
     setNotice(null);
     try {
-      const session = await read("/api/v1/session", sessionResponseSchema);
+      const session = await readSession();
       const response = await fetch(
         `/api/v1/subscriptions${id ? `/${encodeURIComponent(id)}` : ""}`,
         {

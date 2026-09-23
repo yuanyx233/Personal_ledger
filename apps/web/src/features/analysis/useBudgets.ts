@@ -1,10 +1,8 @@
 import { budgetsResponseSchema, type BudgetRecord, type BudgetSetting } from "@ledger/domain";
-import {
-  categoriesResponseSchema,
-  sessionResponseSchema,
-  type CategoriesResponse,
-} from "@ledger/domain/api-contracts";
+import { categoriesResponseSchema, type CategoriesResponse } from "@ledger/domain/api-contracts";
 import { useEffect, useState } from "react";
+
+import { readSession } from "../../lib/browser-api";
 
 type BudgetData = { budgets: BudgetRecord[]; categories: CategoriesResponse["data"]["categories"] };
 type State = { status: "loading" } | { status: "error" } | { status: "ready"; data: BudgetData };
@@ -44,7 +42,7 @@ export function useBudgets(month: string) {
     setSaving(true);
     setNotice(null);
     try {
-      const session = await read("/api/v1/session", sessionResponseSchema);
+      const session = await readSession();
       const response = await fetch("/api/v1/budgets", {
         method: "PUT",
         headers: { "Content-Type": "application/json", "X-CSRF-Token": session.data.csrfToken },

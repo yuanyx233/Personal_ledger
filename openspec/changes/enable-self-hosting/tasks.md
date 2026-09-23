@@ -10,8 +10,8 @@
 - [x] 2.2 Relax `APP_TIMEZONE` and `VITE_APP_TIMEZONE` in `packages/domain/src/environment.ts` from `z.literal` to the validator; verify startup fails loudly on an invalid value.
 - [x] 2.3 Replace the fixed `REPORT_TIME_ZONE` and the remaining Toronto literals in `financial-reporting.ts` and `subscriptions.ts` with the configured value threaded through existing call sites.
 - [x] 2.4 Replace the fixed timezone in `apps/web/src/features/analysis/analysis-period.ts` and `quick-entry/quick-entry-preferences.ts`, and remove the hardcoded timezone label in `AnalysisControls.tsx`.
-- [ ] 2.5 Relax the `timezone` literal in the bootstrap contract (`api-contracts.ts`) and add the frontend/Worker agreement check that blocks the UI with both values on mismatch.
-- [ ] 2.6 Re-run the existing date-sensitive domain, Worker, and browser tests parameterised over `America/Toronto` and one other timezone; confirm Toronto results are bit-for-bit unchanged.
+- [x] 2.5 Relax the `timezone` literal in the bootstrap contract (`api-contracts.ts`) and add the frontend/Worker agreement check that blocks the UI with both values on mismatch.
+- [x] 2.6 Re-run the existing date-sensitive domain, Worker, and browser tests parameterised over `America/Toronto` and one other timezone; confirm Toronto results are bit-for-bit unchanged.
 
 ## 3. Open currency set
 
@@ -50,4 +50,4 @@
 
 - [ ] 7.1 Run `npm run verify` and record the result; confirm coverage thresholds are not lowered to accommodate new code.
 - [ ] 7.2 Verify the owner's own configuration end to end: Toronto, `CAD`/`USD`, Chinese interface, existing backup restores, subscription Cron behaviour unchanged.
-- [ ] 7.3 Deploy nothing and publish nothing. Surface Open Questions 1, 2, 3 and 4 for the owner's decision before any release; making the repository public requires separate explicit authorization.
+- [ ] 7.3 Deploy nothing. Surface the remaining open questions for the owner's decision before any release. (The repository was already public when this change began; open question 2 covers what that implies for history.)

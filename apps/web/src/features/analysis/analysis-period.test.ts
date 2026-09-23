@@ -10,9 +10,10 @@ import {
 describe("analysis period navigation", () => {
   it("uses the Toronto calendar at UTC day boundaries", () => {
     const now = new Date("2026-01-01T02:00:00.000Z");
-    expect(currentPeriod("MONTH", now)).toBe("2025-12");
-    expect(currentPeriod("QUARTER", now)).toBe("2025-Q4");
-    expect(currentPeriod("YEAR", now)).toBe("2025");
+    const toronto = "America/Toronto";
+    expect(currentPeriod("MONTH", now, toronto)).toBe("2025-12");
+    expect(currentPeriod("QUARTER", now, toronto)).toBe("2025-Q4");
+    expect(currentPeriod("YEAR", now, toronto)).toBe("2025");
   });
 
   it("follows the configured zone instead of a built-in one", () => {

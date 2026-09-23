@@ -14,3 +14,26 @@ export function readLedgerTimeZone(value: string | undefined): string {
 }
 
 export const LEDGER_TIME_ZONE = readLedgerTimeZone(import.meta.env.VITE_APP_TIMEZONE);
+
+export class TimeZoneMismatchError extends Error {
+  constructor(
+    readonly bundled: string,
+    readonly worker: string,
+  ) {
+    super(
+      `Time zone mismatch: this page was built for ${bundled} but the server reports ${worker}. ` +
+        `Dates would disagree about which day a transaction belongs to, so the ledger is blocked ` +
+        `until VITE_APP_TIMEZONE and APP_TIMEZONE name the same zone.`,
+    );
+    this.name = "TimeZoneMismatchError";
+  }
+}
+
+// Both halves compute calendar days independently, so a disagreement would file
+// entries under different days in the browser and in storage. Stop instead.
+export function assertTimeZoneAgreement(workerTimeZone: string, bundled = LEDGER_TIME_ZONE): void {
+  const canonical = canonicalTimeZone(workerTimeZone);
+  if (canonical !== bundled) {
+    throw new TimeZoneMismatchError(bundled, workerTimeZone);
+  }
+}

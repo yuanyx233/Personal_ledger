@@ -10,9 +10,7 @@ afterEach(() => {
 
 describe("browser API Access recovery", () => {
   it("marks every API fetch as XMLHttpRequest for Cloudflare Access", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      Response.json({ data: { ok: true }, meta: {} }),
-    );
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ data: { ok: true }, meta: {} }));
     vi.stubGlobal("fetch", fetchMock);
 
     await readApi("/api/v1/categories", passthrough);

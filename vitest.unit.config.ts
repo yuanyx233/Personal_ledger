@@ -19,8 +19,9 @@ export default defineConfig({
         statements: 90,
       },
     },
-    // The browser bundle now requires this value; unit tests supply the owner's.
-    env: { VITE_APP_TIMEZONE: "America/Toronto" },
+    // The browser bundle now requires this value. Tests default to the owner's zone
+    // and can be re-run under another to prove nothing depends on that default.
+    env: { VITE_APP_TIMEZONE: process.env.VITE_APP_TIMEZONE ?? "America/Toronto" },
     include: [
       "apps/web/src/**/*.test.{ts,tsx}",
       "packages/domain/src/**/*.test.ts",

@@ -1,5 +1,7 @@
 import { sessionResponseSchema } from "@ledger/domain/api-contracts";
 
+import { assertTimeZoneAgreement } from "./app-config";
+
 interface Parser<T> {
   parse(value: unknown): T;
 }
@@ -30,6 +32,14 @@ export async function readApi<T>(path: string, schema: Parser<T>, signal?: Abort
   );
 }
 
+// Every session read is also the point where the Worker states its zone, so the
+// agreement check runs here rather than in each caller.
+export async function readSession(signal?: AbortSignal) {
+  const session = await readApi("/api/v1/session", sessionResponseSchema, signal);
+  assertTimeZoneAgreement(session.data.timezone);
+  return session;
+}
+
 export async function writeApi<T>(
   path: string,
   method: "DELETE" | "PATCH" | "POST" | "PUT",
@@ -37,7 +47,7 @@ export async function writeApi<T>(
   schema: Parser<T>,
   options: { idempotencyKey?: string } = {},
 ) {
-  const session = await readApi("/api/v1/session", sessionResponseSchema);
+  const session = await readSession();
   return parsedResponse(
     await fetch(path, {
       body: JSON.stringify(body),

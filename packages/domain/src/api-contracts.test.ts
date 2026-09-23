@@ -83,6 +83,24 @@ describe("API envelope contracts", () => {
     ).toBe(false);
   });
 
+  it("reports whichever zone the instance is configured with", () => {
+    const response = {
+      data: {
+        csrfToken: "cGF5bG9hZA.c2lnbmF0dXJl",
+        identity: { email: "owner@example.invalid" },
+        timezone: "Europe/Berlin",
+      },
+      meta: {},
+    };
+    expect(sessionResponseSchema.parse(response).data.timezone).toBe("Europe/Berlin");
+    expect(
+      sessionResponseSchema.safeParse({
+        ...response,
+        data: { ...response.data, timezone: "Not/AZone" },
+      }).success,
+    ).toBe(false);
+  });
+
   it("uses stable sanitized error codes and field errors", () => {
     expect(
       apiErrorEnvelopeSchema.parse({
