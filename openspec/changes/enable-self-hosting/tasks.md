@@ -29,7 +29,7 @@
 
 ## 5. Interface localization
 
-- [ ] 5.1 Build the typed translation catalogue and React context: `TranslationKey` derived from the Chinese catalogue, English typed as `Record<TranslationKey, string>` so a missing key fails typecheck.
+- [x] 5.1 Build the typed translation catalogue and React context: `TranslationKey` derived from the Chinese catalogue, English typed as `Record<TranslationKey, string>` so a missing key fails typecheck.
 - [ ] 5.2 Extract the 434 hardcoded Chinese lines across the 31 files in `apps/web/src` into the catalogue, in feature-sized batches, keeping the Chinese wording identical to today's interface.
 - [ ] 5.3 Write the English catalogue, matching established Chinese terms for reimbursement offset, installments, subscription cancellation with its inclusive effective date, and budget limits.
 - [ ] 5.4 Add language selection: initial language from browser preferences, explicit switching, per-device persistence of the explicit choice, and no write to ledger data on switch.
@@ -40,7 +40,7 @@
 
 ## 6. Documentation
 
-- [ ] 6.1 Confirm the documentation language decision with the owner (Open Question 3).
+- [x] 6.1 Confirm the documentation language decision with the owner (Open Question 3). Resolved 2026-09-23: guides in English, `README.md` bilingual.
 - [ ] 6.2 Write `docs/self-hosting.md`: D1 creation, migrations, Zero Trust Access application setup, the source of each of `ACCESS_AUD`, `ACCESS_TEAM_DOMAIN`, `OWNER_EMAIL` and `CSRF_HMAC_KEY`, the Cron Trigger, regional configuration, and a final check that the owner can log in while anonymous requests are denied.
 - [ ] 6.3 State the supported-currency limitation and the Cloudflare Access prerequisite explicitly in the guide.
 - [ ] 6.4 Strip self-hoster-facing content from `docs/free-preview-deployment.md`, leaving it as the owner's operations record.
