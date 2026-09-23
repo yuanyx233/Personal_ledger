@@ -42,6 +42,8 @@ export const zhCN = {
 
   "overview.currentMonth": "本月 · {period}",
 
+  "language.eyebrow": "界面",
+  "language.description": "只影响这台设备上的显示，不会改动任何账目。",
   "language.label": "界面语言",
   "language.zh-CN": "中文",
   "language.en": "English",

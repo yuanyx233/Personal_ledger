@@ -171,3 +171,26 @@ test("shows an offline state without caching API or export responses", async ({
   await expect(page.locator(".route-stage")).toHaveCount(0);
   await context.setOffline(false);
 });
+
+test("remembers an explicit interface language without touching the ledger", async ({ page }) => {
+  // beforeEach already mocks the API; only observe, so no console errors are added.
+  const writes: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() !== "GET" && request.url().includes("/api/v1/")) {
+      writes.push(`${request.method()} ${request.url()}`);
+    }
+  });
+
+  await page.goto("/settings");
+  const selector = page.getByRole("combobox", { name: "界面语言" });
+  await expect(selector).toHaveValue("zh-CN");
+
+  await selector.selectOption("en");
+  await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
+  await expect(page.getByRole("navigation").getByRole("link", { name: "Overview" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.lang)).toBe("en");
+
+  await page.reload();
+  await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
+  expect(writes).toEqual([]);
+});

@@ -5,15 +5,8 @@ import { RuleSettings } from "./RuleSettings";
 import type { SettingsData } from "./useSettingsData";
 import { useSettingsData } from "./useSettingsData";
 import { useTranslation } from "../../i18n/useTranslation";
-
-function SectionHeading({ eyebrow, title }: { eyebrow: string; title: string }) {
-  return (
-    <div className="settings-section-heading">
-      <p>{eyebrow}</p>
-      <h2>{title}</h2>
-    </div>
-  );
-}
+import { LanguageSettings } from "./LanguageSettings";
+import { SectionHeading } from "./SectionHeading";
 
 function CategorySummary({
   categories,
@@ -56,6 +49,9 @@ export function SettingsPage({ online, route }: { online: boolean; route: AppRou
         <h1>{t(route.labelKey)}</h1>
         <p className="page-description">{t(route.descriptionKey)}</p>
       </header>
+      <div className="settings-sections">
+        <LanguageSettings />
+      </div>
       {!online ? (
         <DataState variant="offline" />
       ) : state.status === "loading" ? (

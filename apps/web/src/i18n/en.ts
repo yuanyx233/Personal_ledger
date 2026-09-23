@@ -48,6 +48,8 @@ export const en: Record<TranslationKey, string> = {
 
   "overview.currentMonth": "This month · {period}",
 
+  "language.eyebrow": "Interface",
+  "language.description": "Affects display on this device only. No ledger data is changed.",
   "language.label": "Interface language",
   "language.zh-CN": "中文",
   "language.en": "English",
