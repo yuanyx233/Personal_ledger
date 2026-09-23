@@ -171,6 +171,51 @@ describe("versioned full JSON export", () => {
     }
   });
 
+  it("round-trips a backup holding another two-decimal currency", () => {
+    const exportedAt = "2026-09-05T12:00:00.000Z";
+    const berlin = createFullJsonExport({
+      data: {
+        ...EMPTY_DATA,
+        budgets: [
+          {
+            categoryId: "food",
+            currency: "EUR",
+            effectiveMonth: "2026-09",
+            amountMinor: 50000,
+            updatedAt: exportedAt,
+          },
+        ],
+      },
+      exportedAt,
+      timezone: "Europe/Berlin",
+    });
+
+    expect(berlin.schemaVersion).toBe(5);
+    expect(normalizeFullJsonExport(JSON.parse(serializeFullJsonExport(berlin)))).toEqual(berlin);
+  });
+
+  it("refuses to write a backup holding a currency it cannot store at the right scale", () => {
+    const exportedAt = "2026-09-05T12:00:00.000Z";
+    expect(() =>
+      createFullJsonExport({
+        data: {
+          ...EMPTY_DATA,
+          budgets: [
+            {
+              categoryId: "food",
+              currency: "JPY",
+              effectiveMonth: "2026-09",
+              amountMinor: 50000,
+              updatedAt: exportedAt,
+            },
+          ],
+        },
+        exportedAt,
+        timezone: "America/Toronto",
+      }),
+    ).toThrow();
+  });
+
   it("rejects a pre-reduction backup instead of silently discarding its removed records", () => {
     const document = createFullJsonExport({
       data: EMPTY_DATA,

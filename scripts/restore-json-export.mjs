@@ -27,7 +27,10 @@ const wrangler = fileURLToPath(
 );
 const config = "apps/web/wrangler.jsonc";
 const defaultLocalD1 = resolve(workspace, ".wrangler/local-d1");
-const USAGE = "Usage: npm run db:restore -- --input <export.json> --persist-to <new-directory>\n";
+const USAGE =
+  "Usage: npm run db:restore -- --input <export.json> --persist-to <new-directory>\n" +
+  "       [--timezone <IANA zone>]  zone of the instance that will serve the restore;\n" +
+  "                                 defaults to VITE_APP_TIMEZONE in apps/web/.env\n";
 
 class RestoreCommandError extends Error {
   constructor(code) {
@@ -44,7 +47,7 @@ function parseArguments(arguments_) {
     const key = arguments_[index];
     const value = arguments_[index + 1];
     if (
-      (key !== "--input" && key !== "--persist-to") ||
+      (key !== "--input" && key !== "--persist-to" && key !== "--timezone") ||
       value === undefined ||
       value.startsWith("--") ||
       values.has(key)
@@ -55,10 +58,10 @@ function parseArguments(arguments_) {
   }
   const input = values.get("--input");
   const persistTo = values.get("--persist-to");
-  if (!input || !persistTo || values.size !== 2) {
+  if (!input || !persistTo || values.size > 3) {
     throw new RestoreCommandError("INVALID_ARGUMENTS");
   }
-  return { help: false, input, persistTo };
+  return { help: false, input, persistTo, timeZone: values.get("--timezone") };
 }
 
 function resolvedNewTarget(rawTarget) {
@@ -70,6 +73,30 @@ function resolvedNewTarget(rawTarget) {
     throw new RestoreCommandError("TARGET_PARENT_NOT_FOUND");
   }
   return join(realpathSync(parent), target.slice(parent.length + 1));
+}
+
+// Dates in a backup were computed in the zone the exporting instance ran in, so
+// restoring it under a different one silently shifts which day each entry belongs to.
+// The frontend value is used because task 2.5 forces it to equal the Worker's.
+function configuredInstanceTimeZone() {
+  const envFile = resolve(workspace, "apps/web/.env");
+  if (!existsSync(envFile)) return null;
+  for (const line of readFileSync(envFile, "utf8").split("\n")) {
+    const match = /^\s*VITE_APP_TIMEZONE\s*=\s*"?([^"\r\n]+)"?\s*$/.exec(line);
+    if (match) return match[1].trim();
+  }
+  return null;
+}
+
+function assertTimeZoneAccepted(document, override) {
+  const expected = override ?? configuredInstanceTimeZone();
+  if (expected === null || expected === document.timezone) return expected;
+  process.stderr.write(
+    `Backup records ${document.timezone} but this instance is configured for ${expected}. ` +
+      "Stored dates were computed in the backup's zone, so restoring here would move them. " +
+      "Pass --timezone to state the zone you intend to restore into.\n",
+  );
+  throw new RestoreCommandError("TIMEZONE_MISMATCH");
 }
 
 function readExport(rawInput) {
@@ -266,6 +293,7 @@ function main() {
       return;
     }
     const document = readExport(arguments_.input);
+    assertTimeZoneAccepted(document, arguments_.timeZone);
     const expectedEvidence = calculateFullJsonRestoreEvidence(document);
     const sql = createFullJsonRestoreSql(document);
     target = resolvedNewTarget(arguments_.persistTo);

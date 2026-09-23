@@ -23,9 +23,9 @@
 
 ## 4. Backup compatibility
 
-- [ ] 4.1 Relax the `currency` constraint in the v5 export schema without changing `schemaVersion`; prove a pre-change backup restores unchanged. (The `timezone` half landed with task 2.3, which could not compile against a literal-typed export field; covered by tests in `full-json-export.test.ts`.)
-- [ ] 4.2 Add the restore-time check that reports a timezone mismatch between the backup and the instance configuration before any write.
-- [ ] 4.3 Confirm `remote-migration-guard` and the documented v4-and-earlier rejection boundary are unaffected.
+- [x] 4.1 Relax the `currency` constraint in the v5 export schema without changing `schemaVersion`; prove a pre-change backup restores unchanged. (The `timezone` half landed with task 2.3, which could not compile against a literal-typed export field; covered by tests in `full-json-export.test.ts`.)
+- [x] 4.2 Add the restore-time check that reports a timezone mismatch between the backup and the instance configuration before any write.
+- [x] 4.3 Confirm `remote-migration-guard` and the documented v4-and-earlier rejection boundary are unaffected.
 
 ## 5. Interface localization
 

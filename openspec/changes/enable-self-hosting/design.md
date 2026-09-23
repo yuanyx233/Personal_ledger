@@ -160,6 +160,18 @@ category-system-transfer  'Transfer'       system_key = 'TRANSFER'  editable = 0
 
 **校验仍独立存在**：下拉框限制的是录入便利性，`ledgerCurrencySchema` 限制的是存储安全。CSV 导入与 API 写入不经过下拉框，因此两层都必须保留。
 
+### D10. 货币校验在所有边界统一收严
+
+实现任务 4.1 时发现分工无原则：任务 3.2 把导出中的订阅改为严格校验，交易与预算仍是宽松的 `/^[A-Z]{3}$/`。
+
+关键事实是 `fullJsonExportSchema` **同时用于导出生成和恢复输入校验**（`normalizeFullJsonExport` 由 `scripts/restore-json-export.mjs` 调用）。宽松一侧意味着一份含 JPY 的备份可以被恢复进按百分之一存储的账本，金额直接错 100 倍。
+
+**选择**：交易、预算、订阅在导出与写入路径上一律使用 `ledgerCurrencySchema`，不变量统一为"账本中的每一笔金额，其货币的次要单位都是 1/100"。
+
+**代价**：若数据库中因直接 SQL 篡改而存在非 1/100 货币的行，导出会失败而非静默捕获，且没有绕过手段。鉴于此类行无法经由任何写入路径产生，该代价可接受，换来的是一个在所有边界都成立的不变量。
+
+**保持宽松的例外**：报表读取路径的 `currencyCodeSchema` 仍为纯格式校验。它读取库中既有数据，收严会让既有数据无法被报表读出。
+
 ### D7. 文档分家
 
 `docs/free-preview-deployment.md` 保留为所有者运维记录（含版本 ID、发布证据、授权条款），新增 `docs/self-hosting.md` 作为安装指南，两者互不引用对方的专有内容。安装指南须显式说明 Cloudflare Access 是**必需前置**而非可选项 —— 没有它应用完全裸奔，因为 Worker 只验 Access JWT，不存在回退鉴权。

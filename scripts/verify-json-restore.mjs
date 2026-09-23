@@ -404,6 +404,44 @@ try {
     "Rejected input changed the valid restored database.",
   );
 
+  // A backup carries the zone its dates were computed in. Restoring it into an
+  // instance configured for another zone would move which day entries fall on.
+  const berlinInput = join(testRoot, "berlin-export.json");
+  const berlinTarget = join(testRoot, "berlin-target");
+  const berlinDocument = JSON.parse(readFileSync(input, "utf8"));
+  berlinDocument.timezone = "Europe/Berlin";
+  writeFileSync(berlinInput, JSON.stringify(berlinDocument), "utf8");
+
+  const mismatched = run(process.execPath, [
+    restoreScript,
+    "--input",
+    berlinInput,
+    "--persist-to",
+    berlinTarget,
+    "--timezone",
+    "America/Toronto",
+  ]);
+  assert(mismatched.status !== 0, "Restore accepted a backup from another time zone.");
+  assert(mismatched.stderr.includes("TIMEZONE_MISMATCH"), "Time zone error code was unstable.");
+  assert(mismatched.stderr.includes("Europe/Berlin"), "Mismatch did not name the backup zone.");
+  assert(mismatched.stderr.includes("America/Toronto"), "Mismatch did not name the instance zone.");
+  assert(!existsSync(berlinTarget), "Rejected time zone created a target database.");
+
+  const berlinAccepted = run(process.execPath, [
+    restoreScript,
+    "--input",
+    berlinInput,
+    "--persist-to",
+    berlinTarget,
+    "--timezone",
+    "Europe/Berlin",
+  ]);
+  assert(berlinAccepted.status === 0, `Matching time zone was refused: ${berlinAccepted.stderr}`);
+  assert(
+    query(berlinTarget, "SELECT COUNT(*) AS count FROM transactions")[0]?.count === 5,
+    "Matching time zone did not restore the ledger.",
+  );
+
   const defaultTarget = run(process.execPath, [
     restoreScript,
     "--input",

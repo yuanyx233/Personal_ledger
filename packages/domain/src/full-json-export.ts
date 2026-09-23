@@ -27,7 +27,6 @@ const textSchema = z.string().max(4096);
 const timestampSchema = z.iso.datetime({ offset: true });
 const dateSchema = z.iso.date();
 const versionSchema = z.int().positive();
-const currencySchema = z.string().regex(/^[A-Z]{3}$/);
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 const categorizationSourceSchema = z.enum(["MANUAL", "RULE", "PLAID", "UNCLASSIFIED"]);
 
@@ -75,7 +74,7 @@ const transactionSchema = z
     categoryId: idSchema.nullable(),
     categoryRuleId: idSchema.nullable(),
     createdAt: timestampSchema,
-    currency: currencySchema,
+    currency: ledgerCurrencySchema,
     description: textSchema,
     direction: z.enum(["INFLOW", "OUTFLOW"]),
     id: idSchema,
