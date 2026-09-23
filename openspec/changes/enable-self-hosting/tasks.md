@@ -15,10 +15,11 @@
 
 ## 3. Open currency set
 
-- [ ] 3.1 Add a currency validator in `packages/domain`: three uppercase letters, with an explicit rejection list for known zero-decimal and three-decimal ISO 4217 codes; test acceptance, scale-risk rejection, and malformed input.
-- [ ] 3.2 Replace `z.enum(["CAD","USD"])` in `api-contracts.ts`, `subscriptions.ts`, and `full-json-export.ts` with the validator.
-- [ ] 3.3 Rework the two-candidate currency inference in `csv-import.ts` so a third currency is detected per row and ambiguity is surfaced instead of guessed; cover it with import tests.
-- [ ] 3.4 Confirm every `/100` conversion and `toFixed(2)` display site still holds under the restricted currency set, and that reports keep currencies separate.
+- [x] 3.1 Add a currency validator in `packages/domain`: three uppercase letters, with an explicit rejection list for known zero-decimal and three-decimal ISO 4217 codes; test acceptance, scale-risk rejection, and malformed input.
+- [x] 3.2 Replace `z.enum(["CAD","USD"])` in `api-contracts.ts`, `subscriptions.ts`, and `full-json-export.ts` with the validator.
+- [x] 3.3 Rework the two-candidate currency inference in `csv-import.ts` so a third currency is detected per row and ambiguity is surfaced instead of guessed; cover it with import tests.
+- [x] 3.4 Confirm every `/100` conversion and `toFixed(2)` display site still holds under the restricted currency set, and that reports keep currencies separate.
+- [ ] 3.5 Offer the configured currencies in the interface. The validator accepts any two-decimal code, but the quick-entry, subscription, budget and transaction-filter controls still list only CAD and USD, so an owner outside Canada cannot select their own currency and the "records an amount in EUR" scenario is unmet through the UI. Needs a decision on where the list comes from (see design D9).
 
 ## 4. Backup compatibility
 

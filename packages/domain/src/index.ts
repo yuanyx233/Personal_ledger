@@ -10,5 +10,6 @@ export * from "./transaction-csv-export";
 export * from "./budgets";
 export * from "./subscriptions";
 export * from "./time-zone";
+export * from "./currency";
 
 export * from "./import-categorization";

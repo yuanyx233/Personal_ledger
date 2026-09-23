@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { ledgerCurrencySchema } from "./currency";
 
 export const subscriptionDateSchema = z.iso
   .date()
@@ -7,7 +8,7 @@ export const subscriptionFieldsSchema = z.strictObject({
   name: z.string().trim().min(1).max(160),
   accountLabel: z.string().trim().min(1).max(160),
   amountMinor: z.int().positive(),
-  currency: z.enum(["CAD", "USD"]),
+  currency: ledgerCurrencySchema,
   categoryId: z.string().min(1).max(160),
   nextChargeDate: subscriptionDateSchema,
 });

@@ -136,6 +136,20 @@ category-system-transfer  'Transfer'       system_key = 'TRANSFER'  editable = 0
 
 **契约影响**：报表响应中不再出现 `period.timeZone`。因无消费者，前端与备份格式均不受影响。
 
+### D9. 界面货币选项的来源 —— 待定
+
+放开校验后发现契约与界面脱节：API 已接受任意两位小数货币，但 `QuickEntryPage`、`SubscriptionForm`、`MonthlyBudgets`、`TransactionsPage` 的下拉框仍然只列 CAD 和 USD。规范中"所有者以 EUR 记一笔"的场景因此在界面上无法达成。
+
+候选方案：
+
+1. **编译期配置**（与时区一致）：新增 `VITE_LEDGER_CURRENCIES`，默认 `CAD,USD`，部署者声明本实例使用的货币。与 D3 的做法同构，自托管者只需改 `.env`。
+2. **自由输入 + 校验**：取消下拉框，改为三字母输入并用 `ledgerCurrencySchema` 校验。零配置，但更易输错，且失去可发现性。
+3. **由既有数据推导**：列出账本中已出现的货币，另设"添加货币"入口。无需配置但首次使用时为空。
+
+倾向方案 1：与时区的配置模型一致，自托管者只在一个地方声明地区相关设置。待所有者确认后由任务 3.5 实施。
+
+另需注意：`Intl.NumberFormat` 的 `style: "currency"` 会按 ICU 显示惯例隐藏 HUF、IDR、COP 的小数位，而账本按百分之一存储，因此金额显示已强制两位小数，否则界面上的合计会对不上。
+
 ### D7. 文档分家
 
 `docs/free-preview-deployment.md` 保留为所有者运维记录（含版本 ID、发布证据、授权条款），新增 `docs/self-hosting.md` 作为安装指南，两者互不引用对方的专有内容。安装指南须显式说明 Cloudflare Access 是**必需前置**而非可选项 —— 没有它应用完全裸奔，因为 Worker 只验 Access JWT，不存在回退鉴权。

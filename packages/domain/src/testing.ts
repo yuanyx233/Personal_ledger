@@ -9,6 +9,7 @@ export interface HostileCsvFixtures {
   invalidUtf8: Uint8Array;
   invalidValues: Uint8Array;
   mapping: CsvImportColumnMapping;
+  otherCurrency: Uint8Array;
   oversizedColumns: Uint8Array;
   oversizedFile: Uint8Array;
   oversizedRows: Uint8Array;
@@ -62,9 +63,12 @@ export function createHostileCsvFixtures(): HostileCsvFixtures {
       encodeCsvFixture(",12.34,OUTFLOW,CAD,Daily Chequing,,"),
     ),
     invalidValues: encodeCsvFixture(
-      `${CSV_FIXTURE_HEADER}\n2026-02-29,Bad date,12.34,OUTFLOW,CAD,Daily Chequing,,\n2026-01-15,Bad amount,12.345,OUTFLOW,CAD,Daily Chequing,,\n2026-01-15,Bad currency,12.34,OUTFLOW,EUR,Daily Chequing,,`,
+      `${CSV_FIXTURE_HEADER}\n2026-02-29,Bad date,12.34,OUTFLOW,CAD,Daily Chequing,,\n2026-01-15,Bad amount,12.345,OUTFLOW,CAD,Daily Chequing,,\n2026-01-15,Bad currency,12.34,OUTFLOW,JPY,Daily Chequing,,`,
     ),
     mapping,
+    otherCurrency: encodeCsvFixture(
+      `${CSV_FIXTURE_HEADER}\n2026-01-15,Berlin groceries,12.34,OUTFLOW,EUR,Daily Chequing,,`,
+    ),
     oversizedColumns: encodeCsvFixture(
       `${Array.from({ length: 33 }, (_, index) => `Column${index + 1}`).join(",")}\n${Array.from({ length: 33 }, () => "value").join(",")}`,
     ),

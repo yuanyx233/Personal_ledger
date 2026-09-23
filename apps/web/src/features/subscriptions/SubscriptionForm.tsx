@@ -47,7 +47,7 @@ export function SubscriptionForm({
         {
           name: formText(data, "name"),
           amountMinor,
-          currency: formText(data, "currency") as "CAD" | "USD",
+          currency: formText(data, "currency"),
           accountLabel: formText(data, "accountLabel"),
           categoryId: formText(data, "categoryId"),
           nextChargeDate: formText(data, "nextChargeDate"),

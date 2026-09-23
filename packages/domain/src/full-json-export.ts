@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { ledgerCurrencySchema } from "./currency";
 import { timeZoneSchema } from "./time-zone";
 
 import { budgetRecordSchema } from "./budgets";
@@ -214,7 +215,7 @@ const subscriptionSchema = z.strictObject({
   cadence: z.enum(["MONTHLY", "YEARLY"]),
   categoryId: idSchema,
   createdAt: timestampSchema,
-  currency: z.enum(["CAD", "USD"]),
+  currency: ledgerCurrencySchema,
   id: idSchema,
   lastErrorCode: z.string().min(1).max(80).nullable(),
   merchantName: z.string().min(1).max(256).nullable(),

@@ -1,5 +1,6 @@
 import { calendarDateSchema, optimisticVersionSchema } from "./api-contracts";
 import * as z from "zod";
+import { isCentesimalCurrency } from "./currency";
 
 export const CSV_IMPORT_LIMITS = {
   CELL_CHARACTERS: 4096,
@@ -166,7 +167,7 @@ export interface CsvImportRowError {
 export interface CanonicalImportRowCandidate {
   accountLabel: string;
   amountMinor: number;
-  currency: "CAD" | "USD";
+  currency: string;
   description: string;
   direction: "INFLOW" | "OUTFLOW";
   postedDate: string;
@@ -704,7 +705,7 @@ function validateRow(raw: CsvImportRawRow): {
   if (normalizedRaw.direction !== "INFLOW" && normalizedRaw.direction !== "OUTFLOW") {
     errors.push({ code: "INVALID_DIRECTION", field: "direction" });
   }
-  if (normalizedRaw.currency !== "CAD" && normalizedRaw.currency !== "USD") {
+  if (!isCentesimalCurrency(normalizedRaw.currency)) {
     errors.push({ code: "INVALID_CURRENCY", field: "currency" });
   }
   if (normalizedRaw.accountLabel.length < 1 || normalizedRaw.accountLabel.length > 160) {
@@ -721,7 +722,7 @@ function validateRow(raw: CsvImportRawRow): {
     errors.length > 0 ||
     amountMinor === null ||
     (normalizedRaw.direction !== "INFLOW" && normalizedRaw.direction !== "OUTFLOW") ||
-    (normalizedRaw.currency !== "CAD" && normalizedRaw.currency !== "USD")
+    !isCentesimalCurrency(normalizedRaw.currency)
   ) {
     return { candidate: null, errors, normalizedRaw };
   }

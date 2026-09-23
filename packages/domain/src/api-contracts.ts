@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { ledgerCurrencySchema } from "./currency";
 
 import { timeZoneSchema } from "./time-zone";
 import { merchantFamilySchema } from "./import-categorization";
@@ -324,7 +325,7 @@ export const decimalAmountSchema = z
   .regex(/^(0|[1-9][0-9]{0,12})(\.[0-9]{1,2})?$/)
   .brand<"DecimalAmount">();
 
-export const manualTransactionCurrencySchema = z.enum(["CAD", "USD"]);
+export const manualTransactionCurrencySchema = ledgerCurrencySchema;
 export const installmentCountSchema = z.int().min(2).max(60);
 
 const manualTransactionFields = {

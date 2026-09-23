@@ -214,6 +214,16 @@ describe("bounded CSV import parsing", () => {
     ]);
   });
 
+  it("imports any two-decimal currency, not only the two this ledger started with", async () => {
+    const result = await parseCsvPreview({
+      chunks: [fixtures.otherCurrency],
+      mapping: fixtures.mapping,
+    });
+
+    expect(result.counts).toEqual({ duplicate: 0, invalid: 0, total: 1, valid: 1 });
+    expect(result.rows[0]?.raw.currency).toBe("EUR");
+  });
+
   it("keeps formula-like text inert and gives later same-file rows separate reviewable identities", async () => {
     const formula = await parseCsvPreview({
       chunks: [fixtures.formulas],

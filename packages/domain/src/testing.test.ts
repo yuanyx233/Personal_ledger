@@ -14,7 +14,10 @@ describe("domain fixture factories", () => {
     expect(decoder.decode(fixtures.oversizedColumns).split("\n")[0]!.split(",")).toHaveLength(33);
     expect(decoder.decode(fixtures.invalidValues)).toContain("2026-02-29");
     expect(decoder.decode(fixtures.invalidValues)).toContain("12.345");
-    expect(decoder.decode(fixtures.invalidValues)).toContain("EUR");
+    // JPY, not EUR: EUR is a valid two-decimal currency now that the ledger is
+    // not Canada-only, while JPY has no minor unit and cannot be stored as /100.
+    expect(decoder.decode(fixtures.invalidValues)).toContain("JPY");
+    expect(decoder.decode(fixtures.otherCurrency)).toContain("EUR");
     expect(decoder.decode(fixtures.quotedDelimiter)).toContain('"Neighbourhood, Market"');
     expect(decoder.decode(fixtures.formulas)).toMatch(/=HYPERLINK|\+SUM|@SUM/);
     expect(decoder.decode(fixtures.exactRepeats).match(/Repeat purchase/g)).toHaveLength(2);

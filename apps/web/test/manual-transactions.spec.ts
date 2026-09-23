@@ -883,6 +883,18 @@ describe("protected manual transaction CRUD", () => {
     }
   });
 
+  it("records an amount in another two-decimal currency", async () => {
+    const response = await createTransaction({
+      ...VALID_CREATE,
+      currency: "EUR",
+      description: "Berlin groceries",
+    });
+
+    expect(response.status).toBe(201);
+    const body = manualTransactionCreateResponseSchema.parse(await response.json());
+    expect(body.data.transaction).toMatchObject({ amountMinor: 1234, currency: "EUR" });
+  });
+
   it("rejects malformed or inactive-category writes without creating a transaction", async () => {
     for (const body of [
       { ...VALID_CREATE, amount: 12.34 },
@@ -890,8 +902,8 @@ describe("protected manual transaction CRUD", () => {
       { ...VALID_CREATE, categoryId: "category-inactive" },
       { ...VALID_CREATE, categoryId: "category-missing" },
       { ...VALID_CREATE, currency: "cad" },
+      // JPY has no minor unit, so the fixed 1/100 storage scale would misrecord it.
       { ...VALID_CREATE, currency: "JPY" },
-      { ...VALID_CREATE, currency: "ZZZ" },
       { ...VALID_CREATE, plaidTransactionId: "forged-provider-identity" },
     ]) {
       const response = await createTransaction(body);

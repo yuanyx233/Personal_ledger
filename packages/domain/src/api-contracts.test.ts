@@ -266,11 +266,21 @@ describe("ledger primitive contracts", () => {
     expect(
       manualTransactionCreateRequestSchema.safeParse({ ...create, amount: "12.345" }).success,
     ).toBe(false);
+    // JPY has no minor unit, so the fixed 1/100 storage scale would misrecord it.
     expect(
       manualTransactionCreateRequestSchema.safeParse({ ...create, currency: "JPY" }).success,
     ).toBe(false);
+    // Any two-decimal currency is accepted now that the ledger is not Canada-only.
+    expect(
+      manualTransactionCreateRequestSchema.safeParse({ ...create, currency: "EUR" }).success,
+    ).toBe(true);
+    // An unknown but well-formed code cannot cause a scale error; it forms its own
+    // reporting bucket, which the owner sees. Design decision D5.
     expect(
       manualTransactionCreateRequestSchema.safeParse({ ...create, currency: "ZZZ" }).success,
+    ).toBe(true);
+    expect(
+      manualTransactionCreateRequestSchema.safeParse({ ...create, currency: "eur" }).success,
     ).toBe(false);
     expect(
       manualTransactionCreateRequestSchema.safeParse({ ...create, plaidTransactionId: "forged" })
