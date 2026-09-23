@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 
 import { APP_ROUTES } from "./app-routes";
+import { useTranslation } from "./i18n/useTranslation";
 import { AppBrand, AppNavigation } from "./components/AppNavigation/AppNavigation";
 import { AnalysisPage } from "./features/analysis/AnalysisPage";
 import { OverviewPage } from "./features/overview/OverviewPage";
@@ -11,6 +12,7 @@ import { TransactionsPage } from "./features/transactions/TransactionsPage";
 import { TransactionDetailPage } from "./features/transactions/TransactionDetailPage";
 
 export function App() {
+  const { t } = useTranslation();
   const [path, setPath] = useState(() => window.location.pathname);
   const [online, setOnline] = useState(() => navigator.onLine);
   const mainRef = useRef<HTMLElement>(null);
@@ -68,7 +70,7 @@ export function App() {
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content" onClick={focusMainContent}>
-        跳到主要内容
+        {t("shell.skipToContent")}
       </a>
 
       <aside className="desktop-sidebar">
@@ -76,13 +78,13 @@ export function App() {
           <AppBrand />
         </a>
         <AppNavigation currentPath={path} layout="sidebar" onNavigate={handleNavigate} />
-        <p className="sidebar-footnote">私有 · 仅限本人</p>
+        <p className="sidebar-footnote">{t("shell.privateNote")}</p>
       </aside>
 
       <div className="mobile-frame">
         <header className="mobile-header">
           <AppBrand />
-          <span className="local-status">本地</span>
+          <span className="local-status">{t("shell.localBadge")}</span>
         </header>
 
         <main id="main-content" ref={mainRef} tabIndex={-1}>

@@ -1,5 +1,8 @@
 import type { ReactNode } from "react";
 
+import type { TranslationKey } from "../../i18n";
+import { useTranslation } from "../../i18n/useTranslation";
+
 type DataStateVariant = "empty" | "error" | "loading" | "offline";
 
 interface DataStateProps {
@@ -11,31 +14,32 @@ interface DataStateProps {
 
 const DEFAULT_CONTENT: Record<
   DataStateVariant,
-  { description: string; marker: string; title: string }
+  { descriptionKey: TranslationKey; marker: string; titleKey: TranslationKey }
 > = {
   empty: {
-    description: "添加手工交易或导入 CSV 后，内容会出现在这里。",
+    descriptionKey: "dataState.empty.description",
     marker: "0",
-    title: "这里还没有数据",
+    titleKey: "dataState.empty.title",
   },
   error: {
-    description: "本次读取没有完成。你的现有账本不会因此被更改。",
+    descriptionKey: "dataState.error.description",
     marker: "!",
-    title: "暂时无法读取",
+    titleKey: "dataState.error.title",
   },
   loading: {
-    description: "正在安全地读取最新数据。",
+    descriptionKey: "dataState.loading.description",
     marker: "…",
-    title: "正在读取账本",
+    titleKey: "dataState.loading.title",
   },
   offline: {
-    description: "重新联网后再试；为保护隐私和准确性，不会显示缓存的交易记录。",
+    descriptionKey: "dataState.offline.description",
     marker: "×",
-    title: "当前处于离线状态",
+    titleKey: "dataState.offline.title",
   },
 };
 
 export function DataState({ action, description, title, variant }: DataStateProps) {
+  const { t } = useTranslation();
   const content = DEFAULT_CONTENT[variant];
   const urgent = variant === "error";
 
@@ -50,8 +54,8 @@ export function DataState({ action, description, title, variant }: DataStateProp
         {content.marker}
       </span>
       <div className="data-state-copy">
-        <h2>{title ?? content.title}</h2>
-        <p>{description ?? content.description}</p>
+        <h2>{title ?? t(content.titleKey)}</h2>
+        <p>{description ?? t(content.descriptionKey)}</p>
         {variant === "loading" ? (
           <div aria-hidden="true" className="data-state-skeleton">
             <span />

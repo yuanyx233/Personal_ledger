@@ -14,6 +14,7 @@ import { InstallmentFields } from "./InstallmentFields";
 import { LEDGER_CURRENCIES, LEDGER_TIME_ZONE } from "../../lib/app-config";
 import { DEFAULT_QUICK_ENTRY_ACCOUNT, ledgerCalendarDate } from "./quick-entry-preferences";
 import { ReimbursementFields } from "../transactions/ReimbursementFields";
+import { useTranslation } from "../../i18n/useTranslation";
 
 function formValue(form: FormData, name: string) {
   const value = form.get(name);
@@ -46,6 +47,7 @@ type NewMerchantPreview = {
 };
 
 export function QuickEntryPage({ online, route }: { online: boolean; route: AppRoute }) {
+  const { t } = useTranslation();
   const [formKey, setFormKey] = useState(0);
   const [newMerchantPreview, setNewMerchantPreview] = useState<NewMerchantPreview | null>(null);
   const [busy, setBusy] = useState(false);
@@ -141,7 +143,7 @@ export function QuickEntryPage({ online, route }: { online: boolean; route: AppR
     <div className="route-content quick-entry-page">
       <header className="quick-entry-header">
         <p className="page-kicker">消费后 · 立即记录</p>
-        <h1>{route.label}</h1>
+        <h1>{t(route.labelKey)}</h1>
         <p>金额和商户就够了；其他字段已经替你填好。</p>
       </header>
 

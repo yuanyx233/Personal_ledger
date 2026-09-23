@@ -5,15 +5,17 @@ import { DataState } from "../../components/DataState/DataState";
 import { OverviewSpendingPie } from "./OverviewSpendingPie";
 import { formatMoney, type OverviewData } from "./overview-data";
 import { useOverviewData } from "./useOverviewData";
+import { useTranslation } from "../../i18n/useTranslation";
 
 type Navigate = (event: MouseEvent<HTMLAnchorElement>, path: string) => void;
 
 function PageHeader({ route }: { route: AppRoute }) {
+  const { t } = useTranslation();
   return (
     <header className="page-header">
-      <p className="page-kicker">安全预览 · 本地账本</p>
-      <h1>{route.label}</h1>
-      <p className="page-description">{route.description}</p>
+      <p className="page-kicker">{t("page.kicker")}</p>
+      <h1>{t(route.labelKey)}</h1>
+      <p className="page-description">{t(route.descriptionKey)}</p>
     </header>
   );
 }

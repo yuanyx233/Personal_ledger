@@ -1,49 +1,51 @@
+import type { TranslationKey } from "./i18n";
+
 export type RouteId =
   "add" | "analysis" | "overview" | "settings" | "subscriptions" | "transactions";
 
 export interface AppRoute {
-  description: string;
+  descriptionKey: TranslationKey;
   id: RouteId;
-  label: string;
+  labelKey: TranslationKey;
   path: string;
 }
 
 export const APP_ROUTES: readonly AppRoute[] = [
   {
-    description: "查看本月收支和每个类别的支出占比。",
+    descriptionKey: "route.overview.description",
     id: "overview",
-    label: "概览",
+    labelKey: "route.overview.label",
     path: "/",
   },
   {
-    description: "浏览每一笔来源清晰、状态明确的账目，并保留可复现的筛选条件。",
+    descriptionKey: "route.transactions.description",
     id: "transactions",
-    label: "交易",
+    labelKey: "route.transactions.label",
     path: "/transactions",
   },
   {
-    description: "消费后立即记入同一本账，通常只需金额和商户。",
+    descriptionKey: "route.add.description",
     id: "add",
-    label: "记一笔",
+    labelKey: "route.add.label",
     path: "/add",
   },
   {
-    description: "查看每月各板块支出，设置预算上限；不同币种分别统计。",
+    descriptionKey: "route.analysis.description",
     id: "analysis",
-    label: "分析",
+    labelKey: "route.analysis.label",
     path: "/analysis",
   },
   {
-    description: "管理订阅、分类规则、导入 CSV 与导出账本。",
+    descriptionKey: "route.settings.description",
     id: "settings",
-    label: "设置",
+    labelKey: "route.settings.label",
     path: "/settings",
   },
 ];
 
 export const SUBSCRIPTIONS_ROUTE: AppRoute = {
-  description: "管理每月自动记账的订阅。",
+  descriptionKey: "route.subscriptions.description",
   id: "subscriptions",
-  label: "订阅",
+  labelKey: "route.subscriptions.label",
   path: "/subscriptions",
 };

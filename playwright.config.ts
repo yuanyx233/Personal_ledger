@@ -18,6 +18,9 @@ export default defineConfig({
   testDir: "./tests/browser",
   use: {
     baseURL: "http://127.0.0.1:5173",
+    // The interface follows the viewer's browser language, so the locale is pinned
+    // here: otherwise these expectations would depend on the machine running them.
+    locale: "zh-CN",
     trace: "retain-on-failure",
   },
   webServer: {

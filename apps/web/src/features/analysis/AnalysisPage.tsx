@@ -15,6 +15,7 @@ import {
   type AnalysisQuery,
 } from "./analysis-period";
 import { useAnalysisData } from "./useAnalysisData";
+import { useTranslation } from "../../i18n/useTranslation";
 
 type Navigate = (event: MouseEvent<HTMLAnchorElement>, path: string) => void;
 
@@ -27,6 +28,7 @@ export function AnalysisPage({
   onNavigate: Navigate;
   route: AppRoute;
 }) {
+  const { t } = useTranslation();
   const [search, setSearch] = useState(() => window.location.search);
   const [formError, setFormError] = useState<string | null>(null);
   const query = useMemo(() => parseAnalysisQuery(search), [search]);
@@ -64,9 +66,9 @@ export function AnalysisPage({
   return (
     <div className="route-content analysis-page">
       <header className="page-header">
-        <p className="page-kicker">安全预览 · 本地账本</p>
-        <h1>{route.label}</h1>
-        <p className="page-description">{route.description}</p>
+        <p className="page-kicker">{t("page.kicker")}</p>
+        <h1>{t(route.labelKey)}</h1>
+        <p className="page-description">{t(route.descriptionKey)}</p>
       </header>
 
       {!online ? (

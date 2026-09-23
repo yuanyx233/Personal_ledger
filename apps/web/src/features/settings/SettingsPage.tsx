@@ -4,6 +4,7 @@ import { CsvImportSettings } from "./CsvImportSettings";
 import { RuleSettings } from "./RuleSettings";
 import type { SettingsData } from "./useSettingsData";
 import { useSettingsData } from "./useSettingsData";
+import { useTranslation } from "../../i18n/useTranslation";
 
 function SectionHeading({ eyebrow, title }: { eyebrow: string; title: string }) {
   return (
@@ -46,13 +47,14 @@ function ExportSummary() {
 }
 
 export function SettingsPage({ online, route }: { online: boolean; route: AppRoute }) {
+  const { t } = useTranslation();
   const { refresh, retry, state } = useSettingsData();
   return (
     <div className="route-content settings-page">
       <header className="page-header">
-        <p className="page-kicker">安全预览 · 本地账本</p>
-        <h1>{route.label}</h1>
-        <p className="page-description">{route.description}</p>
+        <p className="page-kicker">{t("page.kicker")}</p>
+        <h1>{t(route.labelKey)}</h1>
+        <p className="page-description">{t(route.descriptionKey)}</p>
       </header>
       {!online ? (
         <DataState variant="offline" />

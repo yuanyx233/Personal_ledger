@@ -21,9 +21,18 @@ function storeLanguage(language: Language): void {
   }
 }
 
-export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [language, setLanguageState] = useState<Language>(() =>
-    initialLanguage(readStoredLanguage(), navigator.languages ?? [navigator.language]),
+export function LanguageProvider({
+  children,
+  initial,
+}: {
+  children: ReactNode;
+  // Pins the starting language. Tests use it so their expectations do not depend
+  // on the locale of whatever machine runs them.
+  initial?: Language;
+}) {
+  const [language, setLanguageState] = useState<Language>(
+    () =>
+      initial ?? initialLanguage(readStoredLanguage(), navigator.languages ?? [navigator.language]),
   );
 
   useEffect(() => {

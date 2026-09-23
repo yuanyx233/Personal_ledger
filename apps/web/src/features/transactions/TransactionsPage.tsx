@@ -6,6 +6,7 @@ import type { AppRoute } from "../../app-routes";
 import { DataState } from "../../components/DataState/DataState";
 import { TransactionViews } from "./TransactionViews";
 import { useTransactions } from "./useTransactions";
+import { useTranslation } from "../../i18n/useTranslation";
 
 const FILTER_KEYS = [
   "accountId",
@@ -21,6 +22,7 @@ const FILTER_KEYS = [
 ] as const;
 
 export function TransactionsPage({ online, route }: { online: boolean; route: AppRoute }) {
+  const { t } = useTranslation();
   const { navigate, search, state } = useTransactions();
 
   function applyFilters(event: FormEvent<HTMLFormElement>) {
@@ -48,8 +50,8 @@ export function TransactionsPage({ online, route }: { online: boolean; route: Ap
     <div className="route-content transactions-page">
       <header className="page-header">
         <p className="page-kicker">统一账本 · URL 可复现</p>
-        <h1>{route.label}</h1>
-        <p className="page-description">{route.description}</p>
+        <h1>{t(route.labelKey)}</h1>
+        <p className="page-description">{t(route.descriptionKey)}</p>
       </header>
 
       <form className="transaction-filters" key={search.toString()} onSubmit={applyFilters}>

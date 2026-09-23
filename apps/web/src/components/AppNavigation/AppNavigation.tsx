@@ -2,6 +2,7 @@ import { PRODUCT_NAME } from "@ledger/domain";
 import type { MouseEvent, ReactNode } from "react";
 
 import { APP_ROUTES, SUBSCRIPTIONS_ROUTE, type RouteId } from "../../app-routes";
+import { useTranslation } from "../../i18n/useTranslation";
 
 function NavIcon({ route }: { route: RouteId }) {
   const paths: Record<RouteId, ReactNode> = {
@@ -74,13 +75,18 @@ interface AppNavigationProps {
 }
 
 export function AppNavigation({ currentPath, layout, onNavigate }: AppNavigationProps) {
+  const { t } = useTranslation();
   const routes =
     layout === "sidebar"
       ? [...APP_ROUTES.slice(0, 4), SUBSCRIPTIONS_ROUTE, ...APP_ROUTES.slice(4)]
       : APP_ROUTES;
 
   return (
-    <nav aria-label="主导航" className={`${layout}-navigation`} data-navigation={layout}>
+    <nav
+      aria-label={t("shell.mainNavigation")}
+      className={`${layout}-navigation`}
+      data-navigation={layout}
+    >
       <ul className="navigation-list">
         {routes.map((route) => (
           <li key={route.id}>
@@ -91,7 +97,7 @@ export function AppNavigation({ currentPath, layout, onNavigate }: AppNavigation
               onClick={(event) => onNavigate(event, route.path)}
             >
               <NavIcon route={route.id} />
-              <span>{route.label}</span>
+              <span>{t(route.labelKey)}</span>
             </a>
           </li>
         ))}
