@@ -13,7 +13,6 @@ function periodMeta(period: string) {
     dateTo: `${period}-${new Date(Date.UTC(year, month, 0)).getUTCDate()}`,
     grain: "MONTH",
     label: period,
-    timeZone: "America/Toronto",
   };
 }
 
@@ -21,7 +20,17 @@ export async function mockEmptyOverviewApi(page: Page) {
   await page.route("**/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
     let body: unknown = {};
-    if (url.pathname.endsWith("/reports/cash-flow")) {
+    if (url.pathname.endsWith("/reports/spending")) {
+      const period = url.searchParams.get("period")!;
+      body = {
+        data: { sections: [] },
+        meta: {
+          freshness: { generatedAt: "2026-07-17T12:00:00.000Z" },
+          period: periodMeta(period),
+          query: { grain: "MONTH", period },
+        },
+      };
+    } else if (url.pathname.endsWith("/reports/cash-flow")) {
       const period = url.searchParams.get("period")!;
       const prior = previousMonth(period);
       body = {

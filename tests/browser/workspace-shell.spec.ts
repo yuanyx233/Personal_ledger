@@ -25,6 +25,10 @@ test("renders the responsive app shell without horizontal overflow", async ({ pa
 
   await expect(page).toHaveTitle("Personal Ledger");
   await expect(page.getByRole("heading", { level: 1, name: "概览" })).toBeVisible();
+  // The mocked response must actually satisfy the report contract. If it drifts,
+  // the page falls back to the error state and these layout checks would be
+  // measuring that instead of the interface they are meant to cover.
+  await expect(page.getByRole("heading", { name: "暂时无法读取" })).toBeHidden();
 
   const desktopNavigation = page.locator('[data-navigation="sidebar"]');
   const mobileNavigation = page.locator('[data-navigation="bottom"]');
