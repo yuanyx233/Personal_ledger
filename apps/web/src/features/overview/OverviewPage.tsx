@@ -25,6 +25,7 @@ function amountLabel(label: string, amountMinor: number, currency: string) {
 }
 
 function OverviewSections({ data, onNavigate }: { data: OverviewData; onNavigate: Navigate }) {
+  const { t } = useTranslation();
   return (
     <div className="overview-sections">
       <p>
@@ -32,27 +33,27 @@ function OverviewSections({ data, onNavigate }: { data: OverviewData; onNavigate
           href="/transactions?categorizationSource=UNCLASSIFIED"
           onClick={(event) => onNavigate(event, "/transactions?categorizationSource=UNCLASSIFIED")}
         >
-          查看未分类流水
+          {t("overview.viewUnclassified")}
         </a>
       </p>
       <section className="overview-block" data-overview-section="metrics">
         <div className="overview-block-heading">
           <div>
-            <p>本月 · {data.currentPeriod}</p>
-            <h2>本月现金流</h2>
+            <p>{t("overview.thisMonth", { period: data.currentPeriod })}</p>
+            <h2>{t("overview.cashFlow.title")}</h2>
           </div>
         </div>
         {data.currentSections.length === 0 ? (
-          <DataState title="本月还没有可计入报表的交易" variant="empty" />
+          <DataState title={t("overview.cashFlow.empty")} variant="empty" />
         ) : (
           data.currentSections.map((section) => (
             <div className="currency-metrics" key={section.currency}>
               <h3>{section.currency}</h3>
               <dl>
                 {[
-                  ["收入", section.current.incomeMinor],
-                  ["净支出", section.current.netSpendingMinor],
-                  ["净现金流", section.current.netCashFlowMinor],
+                  [t("overview.cashFlow.income"), section.current.incomeMinor],
+                  [t("overview.cashFlow.netSpending"), section.current.netSpendingMinor],
+                  [t("overview.cashFlow.netCashFlow"), section.current.netCashFlowMinor],
                 ].map(([label, value]) => (
                   <div key={String(label)}>
                     <dt>{label}</dt>
@@ -70,12 +71,12 @@ function OverviewSections({ data, onNavigate }: { data: OverviewData; onNavigate
       <section className="overview-block" data-overview-section="spending">
         <div className="overview-block-heading">
           <div>
-            <p>本月 · {data.currentPeriod}</p>
-            <h2>钱花在哪里</h2>
+            <p>{t("overview.thisMonth", { period: data.currentPeriod })}</p>
+            <h2>{t("overview.spending.title")}</h2>
           </div>
         </div>
         {data.spendingSections.length === 0 ? (
-          <DataState title="本月还没有分类支出" variant="empty" />
+          <DataState title={t("overview.spending.empty")} variant="empty" />
         ) : (
           data.spendingSections.map((section) => (
             <OverviewSpendingPie section={section} key={section.currency} onNavigate={onNavigate} />
@@ -95,6 +96,7 @@ export function OverviewPage({
   onNavigate: Navigate;
   route: AppRoute;
 }) {
+  const { t } = useTranslation();
   const { retry, state } = useOverviewData();
   return (
     <div className="route-content overview-page">
@@ -107,7 +109,7 @@ export function OverviewPage({
         <DataState
           action={
             <button className="primary-action" onClick={retry} type="button">
-              重试
+              {t("overview.retry")}
             </button>
           }
           variant="error"

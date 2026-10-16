@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { readApi, writeApi } from "../../lib/browser-api";
 import { CategorySearch } from "./CategorySearch";
+import { useTranslation } from "../../i18n/useTranslation";
 
 type Category = CategoriesResponse["data"]["categories"][number];
 type SuggestedCategory = ManualTransactionPreviewResponse["data"]["category"];
@@ -34,6 +35,7 @@ export function NewMerchantConfirmation({
   onConfirm: (category: Category) => Promise<void>;
   suggestedCategory: SuggestedCategory;
 }) {
+  const { t } = useTranslation();
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState(suggestedCategory.id);
   const [status, setStatus] = useState<"error" | "loading" | "ready">("loading");
@@ -91,7 +93,7 @@ export function NewMerchantConfirmation({
       setSelectedCategoryId(result.data.category.id);
       return true;
     } catch {
-      setActionError("没有创建类别。若名称已存在，请刷新类别列表后重试。");
+      setActionError(t("merchant.createFailed"));
       return false;
     } finally {
       setBusy(false);
@@ -106,7 +108,7 @@ export function NewMerchantConfirmation({
     try {
       await onConfirm(selectedCategory);
     } catch {
-      setActionError("尚未录入。请重试；你的金额、商户和分类选择都已保留。");
+      setActionError(t("merchant.submitFailed"));
     } finally {
       setBusy(false);
     }
@@ -124,24 +126,22 @@ export function NewMerchantConfirmation({
     >
       <section className="quick-category-confirmation">
         <p className="quick-entry-saved">
-          {confirmEveryTime ? "多类别商户 · 尚未写入" : "新商户 · 尚未写入"}
+          {confirmEveryTime ? t("merchant.eyebrow.multi") : t("merchant.eyebrow.new")}
         </p>
         <h2 id="merchant-confirmation-title" ref={headingRef} tabIndex={-1}>
-          {confirmEveryTime ? "确认分类" : "确认新商户"}
+          {confirmEveryTime ? t("merchant.title.multi") : t("merchant.title.new")}
         </h2>
         <p>
-          <strong>{merchant}</strong> 建议归为“{suggestedCategory.name}
-          ”。确认后才会录入，
-          {confirmEveryTime
-            ? "这个商户可能对应不同消费类型，每次录入前都会让你确认。"
-            : "并记住以后相同商户的分类。"}
+          <strong>{merchant}</strong>{" "}
+          {t("merchant.suggestion", { category: suggestedCategory.name })}{" "}
+          {confirmEveryTime ? t("merchant.suffix.confirmEveryTime") : t("merchant.suffix.remember")}
         </p>
-        {matchedMerchant ? <p>匹配依据：北美商户知识库 · {matchedMerchant}</p> : null}
+        {matchedMerchant ? <p>{t("merchant.matchedBy", { merchant: matchedMerchant })}</p> : null}
 
-        {status === "loading" ? <p role="status">正在加载分类列表…</p> : null}
+        {status === "loading" ? <p role="status">{t("merchant.loadingCategories")}</p> : null}
         {status === "error" ? (
           <div className="quick-category-error" role="alert">
-            <p>分类列表暂时没有加载成功；这笔交易尚未写入。</p>
+            <p>{t("merchant.categoriesFailed")}</p>
             <button
               onClick={() => {
                 setStatus("loading");
@@ -149,14 +149,14 @@ export function NewMerchantConfirmation({
               }}
               type="button"
             >
-              重试
+              {t("merchant.retry")}
             </button>
           </div>
         ) : null}
         {status === "ready" ? (
           <>
             <label className="quick-category-select">
-              分类
+              {t("merchant.category")}
               <select
                 disabled={busy}
                 onChange={(event) => setSelectedCategoryId(event.currentTarget.value)}
@@ -174,7 +174,7 @@ export function NewMerchantConfirmation({
               categories={listedCategories}
               onChoose={(category) => setSelectedCategoryId(category.id)}
               onCreate={createCategory}
-              triggerLabel="搜索或创建类别…"
+              triggerLabel={t("merchant.searchPlaceholder")}
             />
           </>
         ) : null}
@@ -186,7 +186,7 @@ export function NewMerchantConfirmation({
         ) : null}
         <div className="quick-merchant-actions">
           <button disabled={busy} onClick={onCancel} type="button">
-            取消
+            {t("merchant.cancel")}
           </button>
           <button
             className="primary-action"
@@ -194,7 +194,7 @@ export function NewMerchantConfirmation({
             onClick={() => void confirm()}
             type="button"
           >
-            {busy ? "正在录入…" : "确认并录入"}
+            {busy ? t("merchant.confirming") : t("merchant.confirm")}
           </button>
         </div>
       </section>

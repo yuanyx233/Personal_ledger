@@ -1,5 +1,6 @@
 import type { CategoriesResponse } from "@ledger/domain/api-contracts";
 import { useRef, useState } from "react";
+import { useTranslation } from "../../i18n/useTranslation";
 
 type Category = CategoriesResponse["data"]["categories"][number];
 
@@ -28,7 +29,7 @@ export function CategorySearch({
   categories,
   onChoose,
   onCreate,
-  triggerLabel = "其他类别…",
+  triggerLabel,
 }: {
   busy: boolean;
   categories: Category[];
@@ -36,6 +37,8 @@ export function CategorySearch({
   onCreate: (name: string) => Promise<boolean>;
   triggerLabel?: string;
 }) {
+  const { t } = useTranslation();
+  const trigger = triggerLabel ?? t("categorySearch.trigger");
   const [expanded, setExpanded] = useState(false);
   const [search, setSearch] = useState("");
   const [confirmCreate, setConfirmCreate] = useState<string | null>(null);
@@ -65,13 +68,13 @@ export function CategorySearch({
         }}
         type="button"
       >
-        {triggerLabel}
+        {trigger}
       </button>
 
       {expanded ? (
         <div className="quick-category-search">
           <label>
-            搜索或输入类别
+            {t("categorySearch.label")}
             <input
               autoComplete="off"
               maxLength={160}
@@ -85,7 +88,7 @@ export function CategorySearch({
             />
           </label>
           {matches.length > 0 ? (
-            <ul aria-label="已有类别搜索结果">
+            <ul aria-label={t("categorySearch.results")}>
               {matches.map((category) => (
                 <li key={category.id}>
                   <button disabled={busy} onClick={() => onChoose(category)} type="button">
@@ -102,22 +105,22 @@ export function CategorySearch({
               onClick={() => setConfirmCreate(newCategoryName)}
               type="button"
             >
-              创建新类别“{newCategoryName}”
+              {t("categorySearch.create", { name: newCategoryName })}
             </button>
           ) : null}
           {query && matches.length === 0 && !newCategoryName ? (
-            <p className="quick-category-input-error">类别名称含有不支持的字符。</p>
+            <p className="quick-category-input-error">{t("categorySearch.invalidName")}</p>
           ) : null}
         </div>
       ) : null}
 
       {confirmCreate ? (
         <div aria-labelledby="quick-create-title" className="quick-category-create-confirm">
-          <h3 id="quick-create-title">确认创建新类别</h3>
-          <p>将创建支出类别“{confirmCreate}”，并把它选为当前分类。</p>
+          <h3 id="quick-create-title">{t("categorySearch.confirmTitle")}</h3>
+          <p>{t("categorySearch.confirmBody", { name: confirmCreate })}</p>
           <div>
             <button disabled={busy} onClick={() => setConfirmCreate(null)} type="button">
-              返回
+              {t("categorySearch.back")}
             </button>
             <button
               className="primary-action"
@@ -129,7 +132,7 @@ export function CategorySearch({
               }
               type="button"
             >
-              {busy ? "正在保存…" : "确认创建类别"}
+              {busy ? t("categorySearch.saving") : t("categorySearch.confirm")}
             </button>
           </div>
         </div>

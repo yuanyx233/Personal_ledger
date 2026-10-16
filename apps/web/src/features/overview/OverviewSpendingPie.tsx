@@ -2,6 +2,7 @@ import type { SpendingReportSection } from "@ledger/domain";
 import { useId, type MouseEvent } from "react";
 
 import { formatMoney } from "./overview-data";
+import { useTranslation } from "../../i18n/useTranslation";
 
 const COLORS = [
   "#657e69",
@@ -52,6 +53,7 @@ export function OverviewSpendingPie({
   section: SpendingReportSection;
   onNavigate: (event: MouseEvent<HTMLAnchorElement>, path: string) => void;
 }) {
+  const { t } = useTranslation();
   const titleId = useId();
   const rows = [...section.categoryDistribution].sort(
     (a, b) => b.netSpendingMinor - a.netSpendingMinor || a.categoryId.localeCompare(b.categoryId),
@@ -66,17 +68,21 @@ export function OverviewSpendingPie({
     offset += share;
   }
   return (
-    <section className="overview-spending-currency" aria-label={`${section.currency} 分类支出`}>
+    <section
+      className="overview-spending-currency"
+      aria-label={t("pie.regionLabel", { currency: section.currency })}
+    >
       <div className="overview-spending-total">
         <h3>{section.currency}</h3>
         <p>
-          净支出 <strong>{formatMoney(section.netSpendingMinor, section.currency)}</strong>
+          {t("pie.netSpending")}{" "}
+          <strong>{formatMoney(section.netSpendingMinor, section.currency)}</strong>
         </p>
       </div>
       <div className="overview-pie-layout">
         {positiveTotal > 0 ? (
           <svg className="overview-pie" viewBox="0 0 300 300" role="img" aria-labelledby={titleId}>
-            <title id={titleId}>{section.currency} 分类支出饼图，金额和占比见旁边的类别明细</title>
+            <title id={titleId}>{t("pie.chartTitle", { currency: section.currency })}</title>
             {slices.map((slice) => {
               const title = `${slice.categoryName}：${formatMoney(slice.netSpendingMinor, section.currency)}，${(slice.share * 100).toFixed(1)}%`;
               return slice.share === 1 ? (
@@ -103,15 +109,15 @@ export function OverviewSpendingPie({
             })}
           </svg>
         ) : (
-          <p className="overview-pie-empty">暂无正净支出可绘制饼图</p>
+          <p className="overview-pie-empty">{t("pie.noPositiveSpending")}</p>
         )}
         <div className="overview-pie-details">
-          <table aria-label={`${section.currency} 分类支出明细`}>
+          <table aria-label={t("pie.tableLabel", { currency: section.currency })}>
             <thead>
               <tr>
-                <th scope="col">类别</th>
-                <th scope="col">净支出</th>
-                <th scope="col">占比</th>
+                <th scope="col">{t("pie.column.category")}</th>
+                <th scope="col">{t("pie.column.netSpending")}</th>
+                <th scope="col">{t("pie.column.share")}</th>
               </tr>
             </thead>
             <tbody>
@@ -135,7 +141,7 @@ export function OverviewSpendingPie({
                     <td>{formatMoney(row.netSpendingMinor, section.currency)}</td>
                     <td>
                       {row.netSpendingMinor < 0
-                        ? "净退款"
+                        ? t("pie.netRefund")
                         : positiveTotal === 0
                           ? "—"
                           : `${((row.netSpendingMinor / positiveTotal) * 100).toFixed(1)}%`}
@@ -145,9 +151,7 @@ export function OverviewSpendingPie({
               })}
             </tbody>
           </table>
-          <p className="overview-pie-note">
-            已扣除退款和报销抵扣，不含转账。饼图占比按各类别正净支出计算；点击类别查看明细。
-          </p>
+          <p className="overview-pie-note">{t("pie.footnote")}</p>
         </div>
       </div>
     </section>

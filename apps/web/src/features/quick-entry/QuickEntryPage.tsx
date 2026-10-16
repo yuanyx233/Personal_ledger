@@ -48,6 +48,8 @@ type NewMerchantPreview = {
 
 export function QuickEntryPage({ online, route }: { online: boolean; route: AppRoute }) {
   const { t } = useTranslation();
+  const categorySuffix = (confirmEveryTime: boolean) =>
+    confirmEveryTime ? t("entry.categorySuffix.once") : t("entry.categorySuffix.remembered");
   const [formKey, setFormKey] = useState(0);
   const [newMerchantPreview, setNewMerchantPreview] = useState<NewMerchantPreview | null>(null);
   const [busy, setBusy] = useState(false);
@@ -117,21 +119,21 @@ export function QuickEntryPage({ online, route }: { online: boolean; route: AppR
         );
         finish(
           draft.installmentCount
-            ? `已记下，共生成 ${draft.installmentCount} 期，并已按商户规则分类。`
-            : "已记下，并已按商户规则分类。",
+            ? t("entry.savedInstallments", { count: draft.installmentCount })
+            : t("entry.saved"),
         );
       }
     } catch (error) {
       if (error instanceof BrowserApiError && error.requiresLogin) {
         setLoginRequired(true);
-        setNotice({ kind: "error", text: "登录已过期；请重新登录后再试，这笔尚未写入。" });
+        setNotice({ kind: "error", text: t("entry.sessionExpired") });
       } else {
         setNotice({
           kind: "error",
           text:
             error instanceof BrowserApiError && error.status === 422
-              ? "没有写入，请检查金额；抵扣不能超过原金额，最多保留两位小数。"
-              : "没有写入，请检查后重试。",
+              ? t("entry.invalidAmount")
+              : t("entry.failed"),
         });
       }
     } finally {
@@ -142,9 +144,9 @@ export function QuickEntryPage({ online, route }: { online: boolean; route: AppR
   return (
     <div className="route-content quick-entry-page">
       <header className="quick-entry-header">
-        <p className="page-kicker">消费后 · 立即记录</p>
+        <p className="page-kicker">{t("entry.kicker")}</p>
         <h1>{t(route.labelKey)}</h1>
-        <p>金额和商户就够了；其他字段已经替你填好。</p>
+        <p>{t("entry.lead")}</p>
       </header>
 
       {!online ? (
@@ -153,7 +155,7 @@ export function QuickEntryPage({ online, route }: { online: boolean; route: AppR
         <>
           <form className="quick-entry-form" key={formKey} onSubmit={(event) => void submit(event)}>
             <label className="quick-entry-amount">
-              金额
+              {t("entry.amount")}
               <span className="quick-entry-money-input">
                 <span aria-hidden="true">$</span>
                 <input
@@ -169,7 +171,7 @@ export function QuickEntryPage({ online, route }: { online: boolean; route: AppR
               </span>
             </label>
             <label>
-              商户或描述
+              {t("entry.merchant")}
               <input
                 autoComplete="off"
                 enterKeyHint="done"
@@ -179,7 +181,7 @@ export function QuickEntryPage({ online, route }: { online: boolean; route: AppR
               />
             </label>
             <label>
-              账户
+              {t("entry.account")}
               <input
                 defaultValue={DEFAULT_QUICK_ENTRY_ACCOUNT}
                 maxLength={160}
@@ -188,10 +190,10 @@ export function QuickEntryPage({ online, route }: { online: boolean; route: AppR
               />
             </label>
             <details className="quick-entry-options">
-              <summary>日期、币种和方向</summary>
+              <summary>{t("entry.moreFields")}</summary>
               <div>
                 <label>
-                  日期
+                  {t("entry.date")}
                   <input
                     defaultValue={ledgerCalendarDate(new Date(), LEDGER_TIME_ZONE)}
                     name="postedDate"
@@ -200,7 +202,7 @@ export function QuickEntryPage({ online, route }: { online: boolean; route: AppR
                   />
                 </label>
                 <label>
-                  币种
+                  {t("entry.currency")}
                   <select
                     value={currency}
                     onChange={(event) => setCurrency(event.currentTarget.value)}
@@ -214,7 +216,7 @@ export function QuickEntryPage({ online, route }: { online: boolean; route: AppR
                   </select>
                 </label>
                 <label>
-                  方向
+                  {t("entry.direction")}
                   <select
                     value={direction}
                     onChange={(event) => {
@@ -223,8 +225,8 @@ export function QuickEntryPage({ online, route }: { online: boolean; route: AppR
                     }}
                     name="direction"
                   >
-                    <option value="OUTFLOW">支出</option>
-                    <option value="INFLOW">收入</option>
+                    <option value="OUTFLOW">{t("entry.direction.outflow")}</option>
+                    <option value="INFLOW">{t("entry.direction.inflow")}</option>
                   </select>
                 </label>
               </div>
@@ -242,7 +244,7 @@ export function QuickEntryPage({ online, route }: { online: boolean; route: AppR
               disabled={busy || newMerchantPreview !== null}
               type="submit"
             >
-              {busy ? "正在保存…" : "记入账本"}
+              {busy ? t("entry.submitting") : t("entry.submit")}
             </button>
           </form>
           {newMerchantPreview ? (
@@ -264,8 +266,15 @@ export function QuickEntryPage({ online, route }: { online: boolean; route: AppR
                 );
                 finish(
                   newMerchantPreview.draft.installmentCount
-                    ? `已记下，共生成 ${newMerchantPreview.draft.installmentCount} 期并分类为“${category.name}”${newMerchantPreview.confirmEveryTime ? "。" : "；以后相同商户会自动使用这个类别。"}`
-                    : `已记下并分类为“${category.name}”${newMerchantPreview.confirmEveryTime ? "。" : "；以后相同商户会自动使用这个类别。"}`,
+                    ? t("entry.savedCategorisedInstallments", {
+                        category: category.name,
+                        count: newMerchantPreview.draft.installmentCount,
+                        suffix: categorySuffix(newMerchantPreview.confirmEveryTime),
+                      })
+                    : t("entry.savedCategorised", {
+                        category: category.name,
+                        suffix: categorySuffix(newMerchantPreview.confirmEveryTime),
+                      }),
                 );
               }}
               suggestedCategory={newMerchantPreview.suggestedCategory}
@@ -287,7 +296,7 @@ export function QuickEntryPage({ online, route }: { online: boolean; route: AppR
               onClick={() => window.location.reload()}
               type="button"
             >
-              重新登录
+              {t("entry.signInAgain")}
             </button>
           ) : null}
         </div>
