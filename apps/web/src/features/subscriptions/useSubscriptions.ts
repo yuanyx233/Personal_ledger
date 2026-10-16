@@ -7,6 +7,7 @@ import { categoriesResponseSchema, type CategoriesResponse } from "@ledger/domai
 import { useEffect, useRef, useState } from "react";
 
 import { readSession } from "../../lib/browser-api";
+import { useTranslation } from "../../i18n/useTranslation";
 
 type Data = ReturnType<typeof subscriptionsResponseSchema.parse> & {
   categories: CategoriesResponse["data"]["categories"];
@@ -19,6 +20,7 @@ async function read<T>(url: string, schema: { parse(value: unknown): T }, signal
 }
 
 export function useSubscriptions() {
+  const { t } = useTranslation();
   const [state, setState] = useState<State>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -64,13 +66,9 @@ export function useSubscriptions() {
       if (!response.ok) {
         if (response.status === 409) {
           setAttempt((value) => value + 1);
-          throw new Error("订阅已被更新，已重新加载，请核对后再提交。");
+          throw new Error(t("subApi.stale"));
         }
-        throw new Error(
-          response.status === 422
-            ? "请检查金额、支出类别和日期；编辑时不能将扣款日移到已处理日期之前。"
-            : "未能确认保存结果，请刷新核对后重试。",
-        );
+        throw new Error(response.status === 422 ? t("subApi.invalid") : t("subApi.unconfirmed"));
       }
       const result = (await response.json()) as {
         data: { removedCount: number };
@@ -80,10 +78,10 @@ export function useSubscriptions() {
         error: false,
         text:
           "action" in input && input.action === "CANCEL"
-            ? `取消日期已保存，已删除 ${result.data.removedCount} 笔自动支出。`
+            ? t("subApi.cancelled", { count: result.data.removedCount })
             : "action" in input && input.action === "RESUME"
-              ? "订阅已恢复，从新的开始日期记账。"
-              : "订阅已保存。",
+              ? t("subApi.resumed")
+              : t("subApi.saved"),
       });
       try {
         const updated = await read("/api/v1/subscriptions", subscriptionsResponseSchema);
@@ -94,13 +92,13 @@ export function useSubscriptions() {
         );
       } catch {
         setState({ status: "error" });
-        setNotice({ error: false, text: "操作已保存，但列表刷新失败，请重新加载。" });
+        setNotice({ error: false, text: t("subApi.savedButStale") });
       }
       return true;
     } catch (error) {
       setNotice({
         error: true,
-        text: error instanceof Error ? error.message : "未能确认保存结果，请刷新核对后重试。",
+        text: error instanceof Error ? error.message : t("subApi.unconfirmed"),
       });
       return false;
     } finally {

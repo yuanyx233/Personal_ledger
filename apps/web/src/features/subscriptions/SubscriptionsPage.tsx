@@ -3,6 +3,7 @@ import type { SubscriptionCharge, SubscriptionRecord } from "@ledger/domain";
 import { DataState } from "../../components/DataState/DataState";
 import { SubscriptionDateForm, SubscriptionForm } from "./SubscriptionForm";
 import { useSubscriptions } from "./useSubscriptions";
+import { useTranslation } from "../../i18n/useTranslation";
 
 function money(amount: number, currency: string) {
   return `${currency} ${(amount / 100).toFixed(2)}`;
@@ -26,14 +27,15 @@ function SubscriptionItem({
   category: string;
   onAction: (action: "EDIT" | "CANCEL" | "RESUME") => void;
 }) {
+  const { t } = useTranslation();
   const stopped = cancelled(plan, today);
   const status = stopped
-    ? "已取消"
+    ? t("sub.status.cancelled")
     : plan.status === "PAUSED"
-      ? "已暂停"
+      ? t("sub.status.paused")
       : plan.cancellationEffectiveDate
-        ? "待取消"
-        : "订阅中";
+        ? t("sub.status.pendingCancel")
+        : t("sub.status.active");
   return (
     <article className="subscription-item" aria-label={plan.name}>
       <div className="subscription-item-heading">
@@ -43,7 +45,10 @@ function SubscriptionItem({
         </div>
         <p className="subscription-price">
           {money(plan.amountMinor, plan.currency)}
-          <small> / {plan.cadence === "MONTHLY" ? "月" : "年"}</small>
+          <small>
+            {" "}
+            / {plan.cadence === "MONTHLY" ? t("sub.cadence.monthly") : t("sub.cadence.yearly")}
+          </small>
         </p>
       </div>
       <p className="settings-muted">
@@ -51,43 +56,50 @@ function SubscriptionItem({
       </p>
       <p>
         {plan.cancellationEffectiveDate
-          ? `取消生效日：${plan.cancellationEffectiveDate}（含当天）`
-          : "未设置取消日期"}
+          ? t("sub.cancelEffective", { date: plan.cancellationEffectiveDate })
+          : t("sub.noCancelDate")}
       </p>
       {!stopped && plan.status === "ACTIVE" && (
         <p>
-          下次扣款：{plan.nextChargeDate}
-          {plan.nextChargeDate <= today ? " · 等待后台补记" : ""}
+          {t("sub.nextCharge", { date: plan.nextChargeDate })}
+          {plan.nextChargeDate <= today ? t("sub.awaitingCatchUp") : ""}
         </p>
       )}
-      {plan.lastErrorCode && <p role="status">自动记账需要检查，请核对订阅设置。</p>}
+      {plan.lastErrorCode && <p role="status">{t("sub.needsCheck")}</p>}
       <div className="subscription-actions">
         <button type="button" onClick={() => onAction("EDIT")}>
-          编辑
+          {t("sub.edit")}
         </button>
         {stopped || plan.status === "PAUSED" || plan.cancellationEffectiveDate ? (
           <button type="button" onClick={() => onAction("RESUME")}>
-            恢复订阅
+            {t("sub.resume")}
           </button>
         ) : null}
         <button type="button" onClick={() => onAction("CANCEL")}>
-          {plan.cancellationEffectiveDate ? "修改取消日期" : "取消订阅"}
+          {plan.cancellationEffectiveDate ? t("sub.changeCancelDate") : t("sub.cancel")}
         </button>
       </div>
       <details className="subscription-history">
-        <summary>最近记账记录{charges.length === 0 ? " · 暂无" : ""}</summary>
+        <summary>
+          {t("sub.recentCharges")}
+          {charges.length === 0 ? t("sub.recentCharges.none") : ""}
+        </summary>
         {charges.length > 0 ? (
           <ul>
             {charges.map((charge) => (
               <li key={charge.id}>
                 <span>{charge.scheduledDate}</span>
                 <span>{money(charge.amountMinor, charge.currency)}</span>
-                <span>{charge.status === "NOT_CHARGED" ? "已删除" : "已记支出"}</span>
+                <span>
+                  {charge.status === "NOT_CHARGED"
+                    ? t("sub.charge.removed")
+                    : t("sub.charge.recorded")}
+                </span>
               </li>
             ))}
           </ul>
         ) : (
-          <p className="settings-muted">到期后，自动支出会显示在这里。</p>
+          <p className="settings-muted">{t("sub.charges.empty")}</p>
         )}
       </details>
     </article>
@@ -95,6 +107,7 @@ function SubscriptionItem({
 }
 
 export function SubscriptionsPage({ online }: { online: boolean }) {
+  const { t } = useTranslation();
   const { state, saving, notice, save, retry } = useSubscriptions();
   const [selection, setSelection] = useState<{
     id?: string;
@@ -112,11 +125,9 @@ export function SubscriptionsPage({ online }: { online: boolean }) {
   return (
     <div className="route-content settings-page subscriptions-page">
       <header className="page-header">
-        <p className="page-kicker">每月自动记账</p>
-        <h1>订阅管理</h1>
-        <p className="page-description">
-          管理每一项固定支出。取消可追溯到过去，重新订阅也可以从新日期开始。
-        </p>
+        <p className="page-kicker">{t("sub.page.kicker")}</p>
+        <h1>{t("sub.page.title")}</h1>
+        <p className="page-description">{t("sub.page.lead")}</p>
       </header>
       {notice && (
         <p className="subscription-notice" role={notice.error ? "alert" : "status"}>
@@ -132,7 +143,7 @@ export function SubscriptionsPage({ online }: { online: boolean }) {
           variant="error"
           action={
             <button type="button" className="primary-action" onClick={retry}>
-              重新加载
+              {t("sub.reload")}
             </button>
           }
         />
@@ -145,7 +156,7 @@ export function SubscriptionsPage({ online }: { online: boolean }) {
                   (plan) => !cancelled(plan, state.data.meta.today) && plan.status === "ACTIVE",
                 ).length
               }{" "}
-              项正在订阅
+              {t("sub.activeCount")}
             </p>
             <button
               ref={addButton}
@@ -154,7 +165,7 @@ export function SubscriptionsPage({ online }: { online: boolean }) {
               disabled={saving}
               onClick={() => setSelection({ action: "CREATE" })}
             >
-              添加订阅
+              {t("sub.add")}
             </button>
           </div>
           {selection?.action === "CREATE" || (selection?.action === "EDIT" && selected) ? (
@@ -192,8 +203,8 @@ export function SubscriptionsPage({ online }: { online: boolean }) {
             />
           ) : state.data.data.subscriptions.length === 0 ? (
             <section className="settings-section">
-              <h2>还没有订阅</h2>
-              <p>添加名称、金额和首次扣款日，以后每个月会自动记入支出。</p>
+              <h2>{t("sub.empty.title")}</h2>
+              <p>{t("sub.empty.body")}</p>
             </section>
           ) : (
             <div className="subscription-list">
@@ -204,7 +215,7 @@ export function SubscriptionsPage({ online }: { online: boolean }) {
                   today={state.data.meta.today}
                   category={
                     state.data.categories.find(({ id }) => id === plan.categoryId)?.name ??
-                    "原支出类别"
+                    t("sub.originalCategory")
                   }
                   charges={state.data.data.charges.filter(
                     ({ subscriptionId }) => subscriptionId === plan.id,

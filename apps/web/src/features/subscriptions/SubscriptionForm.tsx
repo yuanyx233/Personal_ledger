@@ -7,6 +7,7 @@ import type { CategoriesResponse } from "@ledger/domain/api-contracts";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { LEDGER_CURRENCIES } from "../../lib/app-config";
+import { useTranslation } from "../../i18n/useTranslation";
 
 function formText(data: FormData, name: string): string {
   const value = data.get(name);
@@ -28,6 +29,7 @@ export function SubscriptionForm({
   onClose: () => void;
   onSave: (fields: SubscriptionFields, requestId: string) => Promise<boolean>;
 }) {
+  const { t } = useTranslation();
   const [requestId] = useState(() => crypto.randomUUID());
   const [error, setError] = useState<string | null>(null);
   const firstInput = useRef<HTMLInputElement>(null);
@@ -41,7 +43,7 @@ export function SubscriptionForm({
       amountMinor = parseBudgetAmount(formText(data, "amount"));
       if (!amountMinor) throw new Error();
     } catch {
-      setError("请输入大于 0 的金额，最多两位小数。");
+      setError(t("subForm.invalidAmount"));
       return;
     }
     if (
@@ -64,27 +66,25 @@ export function SubscriptionForm({
       className="settings-section subscription-editor"
       aria-labelledby="subscription-form-title"
     >
-      <h2 id="subscription-form-title">{plan ? "编辑订阅" : "添加订阅"}</h2>
-      <p className="settings-muted">
-        {plan
-          ? "修改只影响之后的扣款，已记录的金额保持不变。"
-          : "从首次扣款日起按月记入支出；选择过去的日期会补记到期月份。"}
-      </p>
+      <h2 id="subscription-form-title">
+        {plan ? t("subForm.title.edit") : t("subForm.title.add")}
+      </h2>
+      <p className="settings-muted">{plan ? t("subForm.lead.edit") : t("subForm.lead.add")}</p>
       <form onSubmit={(event) => void submit(event)}>
         <fieldset disabled={saving} className="subscription-fields">
           <label>
-            订阅名称
+            {t("subForm.name")}
             <input
               ref={firstInput}
               name="name"
               required
               maxLength={160}
               defaultValue={plan?.name}
-              placeholder="例如 Apple Music"
+              placeholder={t("subForm.namePlaceholder")}
             />
           </label>
           <label>
-            每次金额
+            {t("subForm.amount")}
             <input
               name="amount"
               required
@@ -94,7 +94,7 @@ export function SubscriptionForm({
             />
           </label>
           <label>
-            币种
+            {t("subForm.currency")}
             <select name="currency" defaultValue={plan?.currency ?? LEDGER_CURRENCIES[0]}>
               {LEDGER_CURRENCIES.map((code) => (
                 <option key={code} value={code}>
@@ -104,7 +104,7 @@ export function SubscriptionForm({
             </select>
           </label>
           <label>
-            扣款账户
+            {t("subForm.account")}
             <input
               name="accountLabel"
               required
@@ -113,10 +113,10 @@ export function SubscriptionForm({
             />
           </label>
           <label>
-            支出类别
+            {t("subForm.category")}
             <select name="categoryId" required defaultValue={plan?.categoryId ?? ""}>
               <option value="" disabled>
-                选择支出类别
+                {t("subForm.categoryPlaceholder")}
               </option>
               {categories
                 .filter(({ active, kind }) => active && kind === "EXPENSE")
@@ -128,7 +128,7 @@ export function SubscriptionForm({
             </select>
           </label>
           <label>
-            {plan ? "下次扣款日" : "首次扣款日"}
+            {plan ? t("subForm.nextChargeDate") : t("subForm.firstChargeDate")}
             <input
               type="date"
               name="nextChargeDate"
@@ -140,17 +140,15 @@ export function SubscriptionForm({
           </label>
         </fieldset>
         <p className="settings-muted">
-          {plan?.cadence === "YEARLY"
-            ? "此历史订阅按年扣款。"
-            : "每月按所选日期扣款；当月没有对应日期时，使用当月最后一天。"}
+          {plan?.cadence === "YEARLY" ? t("subForm.note.yearly") : t("subForm.note.monthly")}
         </p>
         {error && <p role="alert">{error}</p>}
         <div className="subscription-actions">
           <button className="primary-action" disabled={saving} type="submit">
-            {saving ? "保存中…" : "保存订阅"}
+            {saving ? t("subForm.saving") : t("subForm.save")}
           </button>
           <button type="button" disabled={saving} onClick={onClose}>
-            返回列表
+            {t("subForm.back")}
           </button>
         </div>
       </form>
@@ -173,6 +171,7 @@ export function SubscriptionDateForm({
   onClose: () => void;
   onSave: (date: string) => Promise<boolean>;
 }) {
+  const { t } = useTranslation();
   const dateInput = useRef<HTMLInputElement>(null);
   useEffect(() => dateInput.current?.focus(), []);
   const cancel = action === "CANCEL";
@@ -182,13 +181,9 @@ export function SubscriptionDateForm({
       aria-labelledby="subscription-date-title"
     >
       <h2 id="subscription-date-title">
-        {cancel ? "取消订阅" : "恢复订阅"} · {plan.name}
+        {cancel ? t("subForm.cancelTitle") : t("subForm.resumeTitle")} · {plan.name}
       </h2>
-      <p>
-        {cancel
-          ? "从所选日期（含当天）起停止记账，该日期起已经自动记录的支出也会删除，支出统计随之更新。更早的记录保留。"
-          : "从新的首次扣款日继续按原周期记账，取消期间的月份不会补回。选择过去的日期会补记新开始日期之后的到期支出。"}
-      </p>
+      <p>{cancel ? t("subForm.cancelBody") : t("subForm.resumeBody")}</p>
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -199,7 +194,7 @@ export function SubscriptionDateForm({
         }}
       >
         <label>
-          {cancel ? "从哪天开始取消" : "新的首次扣款日"}
+          {cancel ? t("subForm.cancelFrom") : t("subForm.resumeFrom")}
           <input
             ref={dateInput}
             name="date"
@@ -211,13 +206,17 @@ export function SubscriptionDateForm({
             defaultValue={cancel ? (plan.cancellationEffectiveDate ?? today) : today}
           />
         </label>
-        <p className="settings-muted">此操作只调整本站的订阅记账。</p>
+        <p className="settings-muted">{t("subForm.localOnly")}</p>
         <div className="subscription-actions">
           <button className="primary-action" disabled={saving} type="submit">
-            {saving ? "保存中…" : cancel ? "确认取消并删除对应支出" : "确认恢复"}
+            {saving
+              ? t("subForm.saving")
+              : cancel
+                ? t("subForm.confirmCancel")
+                : t("subForm.confirmResume")}
           </button>
           <button disabled={saving} type="button" onClick={onClose}>
-            返回列表
+            {t("subForm.back")}
           </button>
         </div>
       </form>
