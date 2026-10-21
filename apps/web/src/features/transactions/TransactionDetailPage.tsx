@@ -12,16 +12,22 @@ import { BrowserApiError, writeApi } from "../../lib/browser-api";
 import { formatMoney } from "../overview/overview-data";
 import { useTransactionDetail } from "./useTransactionDetail";
 import { ReimbursementEditor } from "./ReimbursementEditor";
+import type { LanguageContextValue } from "../../i18n/context";
+import { useTranslation } from "../../i18n/useTranslation";
 
 type Transaction = TransactionDetailResponse["data"]["transaction"];
 
-const CATEGORY_SOURCE_LABELS = {
-  MANUAL: "人工",
-  PLAID: "历史银行分类",
-  RULE: "我的规则",
-  UNCLASSIFIED: "未分类",
+const CATEGORY_SOURCE_KEYS = {
+  MANUAL: "tx.auditSource.MANUAL",
+  PLAID: "tx.auditSource.PLAID",
+  RULE: "tx.auditSource.RULE",
+  UNCLASSIFIED: "tx.auditSource.UNCLASSIFIED",
 } as const;
-const STATUS_LABELS = { PENDING: "待入账", POSTED: "已入账", REMOVED: "已移除" } as const;
+const STATUS_KEYS = {
+  PENDING: "tx.status.PENDING",
+  POSTED: "tx.status.POSTED",
+  REMOVED: "tx.status.REMOVED",
+} as const;
 function displayValue(value: string | null) {
   return value || "—";
 }
@@ -33,14 +39,15 @@ function signedAmount(transaction: Transaction) {
 }
 
 function DetailHeader({ transaction }: { transaction?: Transaction }) {
+  const { t } = useTranslation();
   return (
     <header className="page-header transaction-detail-header">
-      <p className="page-kicker">原始记录 · 可追溯修改</p>
-      <h1>交易详情</h1>
+      <p className="page-kicker">{t("txDetail.kicker")}</p>
+      <h1>{t("txDetail.title")}</h1>
       <p className="page-description">
         {transaction
-          ? `${signedAmount(transaction)} · ${STATUS_LABELS[transaction.status]} · ${transaction.postedDate}`
-          : "查看原始字段、分类来路与经过审计的人工决定。"}
+          ? `${signedAmount(transaction)} · ${t(STATUS_KEYS[transaction.status])} · ${transaction.postedDate}`
+          : t("txDetail.lead")}
       </p>
     </header>
   );
@@ -55,14 +62,14 @@ function DetailPageState({ variant }: { variant: "error" | "loading" | "offline"
   );
 }
 
-function mutationErrorMessage(error: unknown) {
+function mutationErrorMessage(error: unknown, t: LanguageContextValue["t"]) {
   if (error instanceof BrowserApiError && error.status === 409) {
-    return "这笔数据刚刚发生变化，请刷新后重试。";
+    return t("txDetail.stale");
   }
   if (error instanceof BrowserApiError && error.status === 422) {
-    return "所选操作不适用于当前交易，请检查类别或当前状态。";
+    return t("txDetail.notApplicable");
   }
-  return "操作没有保存。请检查网络后重试。";
+  return t("txDetail.failed");
 }
 
 function AuditTrail({
@@ -72,14 +79,15 @@ function AuditTrail({
   categories: Map<string, string>;
   transaction: Transaction;
 }) {
+  const { t } = useTranslation();
   return (
     <section aria-labelledby="category-audit-heading" className="detail-section">
       <div className="detail-section-heading">
         <p>Append-only</p>
-        <h2 id="category-audit-heading">分类审计</h2>
+        <h2 id="category-audit-heading">{t("txDetail.auditHeading")}</h2>
       </div>
       {transaction.categoryAudits.length === 0 ? (
-        <p className="detail-muted">尚无分类变更记录。</p>
+        <p className="detail-muted">{t("txDetail.auditEmpty")}</p>
       ) : (
         <ol className="audit-list">
           {transaction.categoryAudits.map((audit) => (
@@ -92,16 +100,16 @@ function AuditTrail({
               </p>
               <span>
                 {audit.oldCategoryId
-                  ? (categories.get(audit.oldCategoryId) ?? "未知类别")
-                  : "无类别"}
+                  ? (categories.get(audit.oldCategoryId) ?? t("txDetail.unknownCategory"))
+                  : t("txDetail.noCategory")}
                 {" → "}
                 {audit.newCategoryId
-                  ? (categories.get(audit.newCategoryId) ?? "未知类别")
-                  : "无类别"}
+                  ? (categories.get(audit.newCategoryId) ?? t("txDetail.unknownCategory"))
+                  : t("txDetail.noCategory")}
               </span>
               <span>
-                {CATEGORY_SOURCE_LABELS[audit.oldSource]} →{" "}
-                {CATEGORY_SOURCE_LABELS[audit.newSource]}
+                {t(CATEGORY_SOURCE_KEYS[audit.oldSource])} →{" "}
+                {t(CATEGORY_SOURCE_KEYS[audit.newSource])}
               </span>
             </li>
           ))}
@@ -112,32 +120,42 @@ function AuditTrail({
 }
 
 function RawDetail({ transaction }: { transaction: Transaction }) {
+  const { t } = useTranslation();
   const fields = [
-    ["原始描述", transaction.description],
-    ["商户", displayValue(transaction.merchantName)],
-    ["规范化商户", displayValue(transaction.normalizedMerchant)],
-    ["账户", transaction.accountLabel ?? "—"],
-    ["授权日期", displayValue(transaction.authorizedDate)],
-    ["入账日期", transaction.postedDate],
+    [t("txDetail.field.description"), transaction.description],
+    [t("txDetail.field.merchant"), displayValue(transaction.merchantName)],
+    [t("txDetail.field.normalizedMerchant"), displayValue(transaction.normalizedMerchant)],
+    [t("txDetail.field.account"), transaction.accountLabel ?? "—"],
+    [t("txDetail.field.authorizedDate"), displayValue(transaction.authorizedDate)],
+    [t("txDetail.field.postedDate"), transaction.postedDate],
     [
-      "分期",
+      t("txDetail.field.installment"),
       transaction.installment
-        ? `第 ${transaction.installment.number}/${transaction.installment.count} 期`
+        ? t("tx.installment", {
+            count: transaction.installment.count,
+            number: transaction.installment.number,
+          })
         : "—",
     ],
-    ["收款方", displayValue(transaction.paymentMetadata.payee)],
-    ["付款方", displayValue(transaction.paymentMetadata.payer)],
-    ["支付方式", displayValue(transaction.paymentMetadata.paymentMethod)],
-    ["参考号", displayValue(transaction.paymentMetadata.referenceNumber)],
-    ["Pending 前身", displayValue(transaction.lifecycle.pendingTransactionId)],
-    ["Posted 后继", displayValue(transaction.lifecycle.replacedByTransactionId)],
+    [t("txDetail.field.payee"), displayValue(transaction.paymentMetadata.payee)],
+    [t("txDetail.field.payer"), displayValue(transaction.paymentMetadata.payer)],
+    [t("txDetail.field.paymentMethod"), displayValue(transaction.paymentMetadata.paymentMethod)],
+    [t("txDetail.field.reference"), displayValue(transaction.paymentMetadata.referenceNumber)],
+    [
+      t("txDetail.field.pendingPredecessor"),
+      displayValue(transaction.lifecycle.pendingTransactionId),
+    ],
+    [
+      t("txDetail.field.postedSuccessor"),
+      displayValue(transaction.lifecycle.replacedByTransactionId),
+    ],
   ] as const;
 
   return (
     <section aria-labelledby="raw-detail-heading" className="detail-section">
       <div className="detail-section-heading">
         <p>Bank record</p>
-        <h2 id="raw-detail-heading">原始字段</h2>
+        <h2 id="raw-detail-heading">{t("txDetail.rawHeading")}</h2>
       </div>
       <dl className="detail-grid">
         {fields.map(([label, value]) => (
@@ -160,6 +178,7 @@ export function TransactionDetailPage({
   onNavigate: (event: MouseEvent<HTMLAnchorElement>, nextPath: string) => void;
   transactionId: string;
 }) {
+  const { t } = useTranslation();
   const { refresh, state } = useTransactionDetail(transactionId);
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
   const [pendingAction, setPendingAction] = useState<string | null>(null);
@@ -179,7 +198,7 @@ export function TransactionDetailPage({
   async function correctCategory(scope: "RULE" | "TRANSACTION") {
     const categoryId = selectedCategoryId;
     if (!categoryId) {
-      setNotice({ kind: "error", text: "请先选择一个新类别。" });
+      setNotice({ kind: "error", text: t("txDetail.chooseCategory") });
       return;
     }
     const action = scope === "RULE" ? "merchant-rule" : "transaction";
@@ -204,13 +223,10 @@ export function TransactionDetailPage({
       await refresh();
       setNotice({
         kind: "success",
-        text:
-          scope === "RULE"
-            ? "已保存未来的精确商户规则；历史交易没有被批量修改。"
-            : "已只修改当前交易。",
+        text: scope === "RULE" ? t("txDetail.savedRule") : t("txDetail.savedOne"),
       });
     } catch (error: unknown) {
-      setNotice({ kind: "error", text: mutationErrorMessage(error) });
+      setNotice({ kind: "error", text: mutationErrorMessage(error, t) });
     } finally {
       setPendingAction(null);
     }
@@ -228,9 +244,9 @@ export function TransactionDetailPage({
       );
       setConfirmDelete(false);
       await refresh();
-      setNotice({ kind: "success", text: "手工交易已标记为移除，并从正常报表中排除。" });
+      setNotice({ kind: "success", text: t("txDetail.removed") });
     } catch (error: unknown) {
-      setNotice({ kind: "error", text: mutationErrorMessage(error) });
+      setNotice({ kind: "error", text: mutationErrorMessage(error, t) });
     } finally {
       setPendingAction(null);
     }
@@ -243,7 +259,7 @@ export function TransactionDetailPage({
         href="/transactions"
         onClick={(event) => onNavigate(event, "/transactions")}
       >
-        ← 返回交易列表
+        {t("txDetail.back")}
       </a>
       <DetailHeader transaction={transaction} />
 
@@ -262,43 +278,43 @@ export function TransactionDetailPage({
       >
         <div className="detail-section-heading">
           <p>Current classification</p>
-          <h2 id="classification-heading">当前分类</h2>
+          <h2 id="classification-heading">{t("txDetail.classificationHeading")}</h2>
         </div>
         <dl className="classification-summary">
           <div>
-            <dt>类别</dt>
+            <dt>{t("txDetail.category")}</dt>
             <dd>
               {transaction.categoryId
-                ? (categoryNames.get(transaction.categoryId) ?? "未知类别")
-                : "未分类"}
+                ? (categoryNames.get(transaction.categoryId) ?? t("txDetail.unknownCategory"))
+                : t("tx.catSource.UNCLASSIFIED")}
             </dd>
           </div>
           <div>
-            <dt>来源</dt>
+            <dt>{t("txDetail.sourceLabel")}</dt>
             <dd>
               {transaction.categorizationSource === "RULE" && transaction.categoryRuleId === null
-                ? "自动识别商户"
-                : CATEGORY_SOURCE_LABELS[transaction.categorizationSource]}
+                ? t("txDetail.recognisedMerchant")
+                : t(CATEGORY_SOURCE_KEYS[transaction.categorizationSource])}
             </dd>
           </div>
           <div>
-            <dt>规则 ID</dt>
+            <dt>{t("txDetail.ruleId")}</dt>
             <dd>{displayValue(transaction.categoryRuleId)}</dd>
           </div>
           <div>
-            <dt>复核原因</dt>
+            <dt>{t("txDetail.reviewReason")}</dt>
             <dd>{displayValue(transaction.reviewReason)}</dd>
           </div>
         </dl>
         <div className="correction-form">
           <label>
-            新类别
+            {t("txDetail.newCategory")}
             <select
               onChange={(event) => setSelectedCategoryId(event.currentTarget.value)}
               value={selectedCategoryId}
             >
               <option disabled value="">
-                选择可编辑类别
+                {t("txDetail.chooseEditable")}
               </option>
               {editableCategories.map((category: CategoryReadModel) => (
                 <option key={category.id} value={category.id}>
@@ -314,19 +330,17 @@ export function TransactionDetailPage({
               onClick={() => void correctCategory("TRANSACTION")}
               type="button"
             >
-              只改这一笔
+              {t("txDetail.onlyThisOne")}
             </button>
             <button
               disabled={pendingAction !== null || transaction.normalizedMerchant === null}
               onClick={() => void correctCategory("RULE")}
               type="button"
             >
-              以后这个商户都这样
+              {t("txDetail.alwaysThisMerchant")}
             </button>
           </div>
-          <p>
-            导入时优先匹配精确规则；已识别的同品牌商户在规则一致时沿用分类。既有历史交易保持不变。
-          </p>
+          <p>{t("txDetail.ruleNote")}</p>
         </div>
       </section>
 
@@ -336,7 +350,7 @@ export function TransactionDetailPage({
         transaction={transaction}
         onSaved={async () => {
           await refresh();
-          setNotice({ kind: "success", text: "抵扣已保存，统计已更新。" });
+          setNotice({ kind: "success", text: t("txDetail.offsetSaved") });
         }}
       />
       <AuditTrail categories={categoryNames} transaction={transaction} />
@@ -345,35 +359,33 @@ export function TransactionDetailPage({
         <section aria-labelledby="manual-danger-heading" className="detail-section">
           <div className="detail-section-heading">
             <p>Destructive action</p>
-            <h2 id="manual-danger-heading">删除手工交易</h2>
+            <h2 id="manual-danger-heading">{t("txDetail.dangerHeading")}</h2>
           </div>
-          <p className="detail-muted">
-            删除会把这笔手工交易标记为已移除，并从正常报表中排除；该操作不会修改任何银行数据。
-          </p>
+          <p className="detail-muted">{t("txDetail.dangerBody")}</p>
           {confirmDelete ? (
             <div className="destructive-confirmation" role="alert">
-              <strong>确认删除这笔手工交易？</strong>
-              <p>金额、日期与描述将不再计入账本正常视图。发生版本冲突时不会删除。</p>
+              <strong>{t("txDetail.confirmTitle")}</strong>
+              <p>{t("txDetail.confirmBody")}</p>
               <div>
                 <button
                   disabled={pendingAction !== null}
                   onClick={() => setConfirmDelete(false)}
                   type="button"
                 >
-                  取消
+                  {t("txDetail.cancel")}
                 </button>
                 <button
                   disabled={pendingAction !== null}
                   onClick={() => void deleteManualTransaction()}
                   type="button"
                 >
-                  确认删除
+                  {t("txDetail.confirmDelete")}
                 </button>
               </div>
             </div>
           ) : (
             <button className="danger-action" onClick={() => setConfirmDelete(true)} type="button">
-              删除这笔手工交易
+              {t("txDetail.delete")}
             </button>
           )}
         </section>

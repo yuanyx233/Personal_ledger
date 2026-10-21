@@ -1,6 +1,7 @@
 import { decimalAmountSchema, decimalAmountToMinorUnits } from "@ledger/domain/api-contracts";
 
 import { formatMoney } from "../overview/overview-data";
+import { useTranslation } from "../../i18n/useTranslation";
 
 export function ReimbursementFields({
   amount,
@@ -15,6 +16,7 @@ export function ReimbursementFields({
   value: string | null;
   onChange: (value: string | null) => void;
 }) {
+  const { t } = useTranslation();
   const total = decimalAmountSchema.safeParse(amount);
   const deduction = decimalAmountSchema.safeParse(value ?? "0");
   const personal =
@@ -34,12 +36,12 @@ export function ReimbursementFields({
             onChange(event.currentTarget.checked ? (isReceipt ? amount : "") : null)
           }
         />
-        {isReceipt ? "这是分摊 / 报销回款" : "分摊 / 报销抵扣"}
+        {isReceipt ? t("reimb.receiptTitle") : t("reimb.offsetTitle")}
       </label>
       {value !== null ? (
         <>
           <label>
-            {isReceipt ? "回款金额（不计收入）" : "抵扣金额"}
+            {isReceipt ? t("reimb.receiptAmount") : t("reimb.offsetAmount")}
             <input
               autoComplete="off"
               inputMode="decimal"
@@ -54,13 +56,13 @@ export function ReimbursementFields({
           </label>
           <p className="reimbursement-preview" aria-live="polite">
             {personal !== null && personal >= 0
-              ? `${isReceipt ? "计入收入" : "个人消费"}：${formatMoney(personal, currency)}`
-              : "请输入有效金额，抵扣不能超过原金额。"}
+              ? t(isReceipt ? "reimb.resultIncome" : "reimb.resultPersonal", {
+                  amount: formatMoney(personal, currency),
+                })
+              : t("reimb.invalid")}
           </p>
           <p className="detail-muted">
-            {isReceipt
-              ? "回款部分不计收入，也不会再次抵扣消费；请在原付款中填写抵扣金额。"
-              : "保留原始付款，只把扣除后的金额计入消费。另录收款时，请标记为分摊 / 报销回款。"}
+            {isReceipt ? t("reimb.receiptNote") : t("reimb.offsetNote")}
           </p>
         </>
       ) : null}

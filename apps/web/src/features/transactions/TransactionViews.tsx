@@ -1,16 +1,25 @@
 import type { TransactionListResponse } from "@ledger/domain/api-contracts";
 
 import { formatMoney } from "../overview/overview-data";
+import { useTranslation } from "../../i18n/useTranslation";
 
 type Transaction = TransactionListResponse["data"]["transactions"][number];
 
-const SOURCE_LABELS = { CSV: "CSV", MANUAL: "手工", PLAID: "历史银行导入" } as const;
-const STATUS_LABELS = { PENDING: "待入账", POSTED: "已入账", REMOVED: "已移除" } as const;
+const SOURCE_KEYS = {
+  CSV: "code.csv",
+  MANUAL: "tx.source.MANUAL",
+  PLAID: "tx.source.PLAID",
+} as const;
+const STATUS_KEYS = {
+  PENDING: "tx.status.PENDING",
+  POSTED: "tx.status.POSTED",
+  REMOVED: "tx.status.REMOVED",
+} as const;
 const CATEGORY_LABELS = {
-  MANUAL: "人工分类",
-  PLAID: "历史银行分类",
-  RULE: "规则分类",
-  UNCLASSIFIED: "未分类",
+  MANUAL: "tx.catSource.MANUAL",
+  PLAID: "tx.catSource.PLAID",
+  RULE: "tx.catSource.RULE",
+  UNCLASSIFIED: "tx.catSource.UNCLASSIFIED",
 } as const;
 
 function transactionName(transaction: Transaction) {
@@ -23,29 +32,38 @@ function signedAmount(transaction: Transaction) {
 }
 
 function Badges({ transaction }: { transaction: Transaction }) {
+  const { t } = useTranslation();
   return (
     <span className="transaction-badges">
-      <span>{SOURCE_LABELS[transaction.source]}</span>
-      <span>{STATUS_LABELS[transaction.status]}</span>
-      <span>{CATEGORY_LABELS[transaction.categorizationSource]}</span>
+      <span>{t(SOURCE_KEYS[transaction.source])}</span>
+      <span>{t(STATUS_KEYS[transaction.status])}</span>
+      <span>{t(CATEGORY_LABELS[transaction.categorizationSource])}</span>
       {transaction.installment ? (
-        <span>{`第 ${transaction.installment.number}/${transaction.installment.count} 期`}</span>
+        <span>
+          {t("tx.installment", {
+            count: transaction.installment.count,
+            number: transaction.installment.number,
+          })}
+        </span>
       ) : null}
       {transaction.reimbursementMinor > 0 ? (
         <span>
-          {transaction.direction === "OUTFLOW" ? "个人消费" : "扣除回款后"}{" "}
+          {transaction.direction === "OUTFLOW" ? t("tx.personalSpending") : t("tx.afterReceipts")}{" "}
           {formatMoney(
             transaction.amountMinor - transaction.reimbursementMinor,
             transaction.currency,
           )}
         </span>
       ) : null}
-      {transaction.categorizationSource === "UNCLASSIFIED" ? <span>待分类</span> : null}
+      {transaction.categorizationSource === "UNCLASSIFIED" ? (
+        <span>{t("tx.pendingClassification")}</span>
+      ) : null}
     </span>
   );
 }
 
 export function TransactionViews({ transactions }: { transactions: Transaction[] }) {
+  const { t } = useTranslation();
   return (
     <>
       <ul className="transaction-list" data-transactions-layout="list">
@@ -55,7 +73,7 @@ export function TransactionViews({ transactions }: { transactions: Transaction[]
               <span className="transaction-row-main">
                 <strong>{transactionName(transaction)}</strong>
                 <span>
-                  {transaction.accountLabel ?? "未标注账户"} · {transaction.postedDate}
+                  {transaction.accountLabel ?? t("tx.unlabelledAccount")} · {transaction.postedDate}
                 </span>
               </span>
               <span className="transaction-amount">{signedAmount(transaction)}</span>
@@ -69,11 +87,11 @@ export function TransactionViews({ transactions }: { transactions: Transaction[]
         <table>
           <thead>
             <tr>
-              <th>商户 / 描述</th>
-              <th>账户</th>
-              <th>日期</th>
-              <th>标记</th>
-              <th>金额</th>
+              <th>{t("tx.column.merchant")}</th>
+              <th>{t("tx.column.account")}</th>
+              <th>{t("tx.column.date")}</th>
+              <th>{t("tx.column.flags")}</th>
+              <th>{t("tx.column.amount")}</th>
             </tr>
           </thead>
           <tbody>
@@ -84,7 +102,7 @@ export function TransactionViews({ transactions }: { transactions: Transaction[]
                     {transactionName(transaction)}
                   </a>
                 </th>
-                <td>{transaction.accountLabel ?? "未标注账户"}</td>
+                <td>{transaction.accountLabel ?? t("tx.unlabelledAccount")}</td>
                 <td>{transaction.postedDate}</td>
                 <td>
                   <Badges transaction={transaction} />

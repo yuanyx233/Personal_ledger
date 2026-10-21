@@ -49,53 +49,53 @@ export function TransactionsPage({ online, route }: { online: boolean; route: Ap
   return (
     <div className="route-content transactions-page">
       <header className="page-header">
-        <p className="page-kicker">统一账本 · URL 可复现</p>
+        <p className="page-kicker">{t("txList.kicker")}</p>
         <h1>{t(route.labelKey)}</h1>
         <p className="page-description">{t(route.descriptionKey)}</p>
       </header>
 
       <form className="transaction-filters" key={search.toString()} onSubmit={applyFilters}>
         <label>
-          状态
+          {t("txList.filter.status")}
           <select defaultValue={search.get("status") ?? ""} name="status">
-            <option value="">全部</option>
-            <option value="POSTED">已入账</option>
-            <option value="PENDING">待入账</option>
-            <option value="REMOVED">已移除</option>
+            <option value="">{t("txList.filter.all")}</option>
+            <option value="POSTED">{t("tx.status.POSTED")}</option>
+            <option value="PENDING">{t("tx.status.PENDING")}</option>
+            <option value="REMOVED">{t("tx.status.REMOVED")}</option>
           </select>
         </label>
         <label>
-          来源
+          {t("txList.filter.source")}
           <select defaultValue={search.get("source") ?? ""} name="source">
-            <option value="">全部</option>
-            <option value="MANUAL">手工</option>
+            <option value="">{t("txList.filter.all")}</option>
+            <option value="MANUAL">{t("tx.source.MANUAL")}</option>
             <option value="CSV">CSV</option>
           </select>
         </label>
         <label>
-          分类来源
+          {t("txList.filter.catSource")}
           <select
             defaultValue={search.get("categorizationSource") ?? ""}
             name="categorizationSource"
           >
-            <option value="">全部</option>
-            <option value="MANUAL">人工</option>
-            <option value="RULE">规则</option>
-            <option value="UNCLASSIFIED">未分类</option>
+            <option value="">{t("txList.filter.all")}</option>
+            <option value="MANUAL">{t("txList.filter.catSource.manual")}</option>
+            <option value="RULE">{t("txList.filter.catSource.rule")}</option>
+            <option value="UNCLASSIFIED">{t("txList.filter.unclassified")}</option>
           </select>
         </label>
         <label>
-          未分类
+          {t("txList.filter.unclassified")}
           <select defaultValue={search.get("needsReview") ?? ""} name="needsReview">
-            <option value="">全部</option>
-            <option value="true">需要分类</option>
-            <option value="false">否</option>
+            <option value="">{t("txList.filter.all")}</option>
+            <option value="true">{t("txList.filter.needsCategory")}</option>
+            <option value="false">{t("txList.filter.no")}</option>
           </select>
         </label>
         <label>
-          币种
+          {t("txList.filter.currency")}
           <select defaultValue={search.get("currency") ?? ""} name="currency">
-            <option value="">全部</option>
+            <option value="">{t("txList.filter.all")}</option>
             {LEDGER_CURRENCIES.map((code) => (
               <option key={code} value={code}>
                 {code}
@@ -104,40 +104,40 @@ export function TransactionsPage({ online, route }: { online: boolean; route: Ap
           </select>
         </label>
         <label>
-          排序
+          {t("txList.filter.sort")}
           <select defaultValue={search.get("sort") ?? "POSTED_DATE_DESC"} name="sort">
-            <option value="POSTED_DATE_DESC">日期：新到旧</option>
-            <option value="POSTED_DATE_ASC">日期：旧到新</option>
-            <option value="AMOUNT_DESC">金额：高到低</option>
-            <option value="AMOUNT_ASC">金额：低到高</option>
+            <option value="POSTED_DATE_DESC">{t("txList.sort.dateDesc")}</option>
+            <option value="POSTED_DATE_ASC">{t("txList.sort.dateAsc")}</option>
+            <option value="AMOUNT_DESC">{t("txList.sort.amountDesc")}</option>
+            <option value="AMOUNT_ASC">{t("txList.sort.amountAsc")}</option>
           </select>
         </label>
         <details>
-          <summary>更多筛选</summary>
+          <summary>{t("txList.moreFilters")}</summary>
           <div className="advanced-filters">
             <label>
-              起始日期
+              {t("txList.dateFrom")}
               <input defaultValue={search.get("dateFrom") ?? ""} name="dateFrom" type="date" />
             </label>
             <label>
-              结束日期
+              {t("txList.dateTo")}
               <input defaultValue={search.get("dateTo") ?? ""} name="dateTo" type="date" />
             </label>
             <label>
-              账户 ID
+              {t("txList.accountId")}
               <input defaultValue={search.get("accountId") ?? ""} name="accountId" />
             </label>
             <label>
-              分类 ID
+              {t("txList.categoryId")}
               <input defaultValue={search.get("categoryId") ?? ""} name="categoryId" />
             </label>
           </div>
         </details>
         <div className="filter-actions">
           <button className="primary-action" type="submit">
-            应用筛选
+            {t("txList.apply")}
           </button>
-          <a href="/transactions">清除</a>
+          <a href="/transactions">{t("txList.clear")}</a>
         </div>
       </form>
 
@@ -148,20 +148,20 @@ export function TransactionsPage({ online, route }: { online: boolean; route: Ap
       ) : state.status === "error" ? (
         <DataState variant="error" />
       ) : state.data.data.transactions.length === 0 ? (
-        <DataState title="没有符合筛选条件的交易" variant="empty" />
+        <DataState title={t("txList.empty")} variant="empty" />
       ) : (
-        <section aria-label="交易结果" className="transaction-results">
+        <section aria-label={t("txList.results")} className="transaction-results">
           <TransactionViews transactions={state.data.data.transactions} />
-          <nav aria-label="交易分页" className="transaction-pagination">
+          <nav aria-label={t("txList.pagination")} className="transaction-pagination">
             <button
               disabled={!search.has("cursor")}
               onClick={() => window.history.back()}
               type="button"
             >
-              上一页
+              {t("txList.previous")}
             </button>
             <button disabled={!state.data.meta.hasMore} onClick={nextPage} type="button">
-              下一页
+              {t("txList.next")}
             </button>
           </nav>
         </section>

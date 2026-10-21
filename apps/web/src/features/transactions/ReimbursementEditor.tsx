@@ -7,6 +7,7 @@ import { useState, type FormEvent } from "react";
 import { BrowserApiError, writeApi } from "../../lib/browser-api";
 import { formatMoney } from "../overview/overview-data";
 import { ReimbursementFields } from "./ReimbursementFields";
+import { useTranslation } from "../../i18n/useTranslation";
 
 export function ReimbursementEditor({
   transaction,
@@ -15,6 +16,7 @@ export function ReimbursementEditor({
   transaction: TransactionDetailResponse["data"]["transaction"];
   onSaved: () => Promise<void>;
 }) {
+  const { t } = useTranslation();
   const [value, setValue] = useState<string | null>(
     transaction.reimbursementMinor > 0 ? (transaction.reimbursementMinor / 100).toFixed(2) : null,
   );
@@ -38,10 +40,10 @@ export function ReimbursementEditor({
     } catch (failure) {
       setError(
         failure instanceof BrowserApiError && failure.status === 409
-          ? "这笔记录已变化，请刷新后重试。"
+          ? t("reimb.stale")
           : failure instanceof BrowserApiError && failure.status === 422
-            ? "抵扣不能超过原金额，最多保留两位小数。"
-            : "没有保存，请检查网络或重新登录后重试。",
+            ? t("reimb.tooLarge")
+            : t("reimb.failed"),
       );
     } finally {
       setBusy(false);
@@ -49,10 +51,12 @@ export function ReimbursementEditor({
   }
   return (
     <section className="detail-section" aria-labelledby="reimbursement-heading">
-      <h2 id="reimbursement-heading">分摊 / 报销</h2>
+      <h2 id="reimbursement-heading">{t("reimb.heading")}</h2>
       <p>
-        原金额：{formatMoney(transaction.amountMinor, transaction.currency)} · 已抵扣：
-        {formatMoney(transaction.reimbursementMinor, transaction.currency)}
+        {t("reimb.original", {
+          amount: formatMoney(transaction.amountMinor, transaction.currency),
+          offset: formatMoney(transaction.reimbursementMinor, transaction.currency),
+        })}
       </p>
       {transaction.status === "POSTED" ? (
         <form className="correction-form" onSubmit={(event) => void submit(event)}>
@@ -65,7 +69,7 @@ export function ReimbursementEditor({
               onChange={setValue}
             />
             <button className="primary-action" type="submit">
-              {busy ? "正在保存…" : "保存抵扣"}
+              {busy ? t("reimb.saving") : t("reimb.save")}
             </button>
           </fieldset>
           {error ? (
@@ -75,7 +79,7 @@ export function ReimbursementEditor({
           ) : null}
         </form>
       ) : (
-        <p className="detail-muted">只有已入账交易可以修改抵扣。</p>
+        <p className="detail-muted">{t("reimb.postedOnly")}</p>
       )}
     </section>
   );
