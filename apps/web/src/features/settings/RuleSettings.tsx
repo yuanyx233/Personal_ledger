@@ -9,6 +9,7 @@ import { useState, type FormEvent } from "react";
 
 import { readApi, writeApi } from "../../lib/browser-api";
 import { useTranslation } from "../../i18n/useTranslation";
+import { categoryDisplayName } from "../../i18n/categoryName";
 
 type Category = CategoriesResponse["data"]["categories"][number];
 type Rule = MerchantRuleListResponse["data"]["rules"][number];
@@ -103,7 +104,7 @@ export function RuleSettings({
           <select name="categoryId" required>
             {targets.map((category) => (
               <option key={category.id} value={category.id}>
-                {category.name}
+                {categoryDisplayName(category, t)}
               </option>
             ))}
           </select>
@@ -153,7 +154,7 @@ export function RuleSettings({
             >
               {targets.map((category) => (
                 <option key={category.id} value={category.id}>
-                  {category.name}
+                  {categoryDisplayName(category, t)}
                 </option>
               ))}
             </select>

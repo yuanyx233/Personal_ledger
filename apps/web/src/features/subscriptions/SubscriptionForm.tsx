@@ -8,6 +8,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { LEDGER_CURRENCIES } from "../../lib/app-config";
 import { useTranslation } from "../../i18n/useTranslation";
+import { categoryDisplayName } from "../../i18n/categoryName";
 
 function formText(data: FormData, name: string): string {
   const value = data.get(name);
@@ -122,7 +123,7 @@ export function SubscriptionForm({
                 .filter(({ active, kind }) => active && kind === "EXPENSE")
                 .map((category) => (
                   <option key={category.id} value={category.id}>
-                    {category.name}
+                    {categoryDisplayName(category, t)}
                   </option>
                 ))}
             </select>

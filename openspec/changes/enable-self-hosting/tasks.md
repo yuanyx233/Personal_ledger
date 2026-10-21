@@ -34,9 +34,9 @@
 - [x] 5.3 Write the English catalogue, matching established Chinese terms for reimbursement offset, installments, subscription cancellation with its inclusive effective date, and budget limits.
 - [x] 5.4 Add language selection: initial language from browser preferences, explicit switching, per-device persistence of the explicit choice, and no write to ledger data on switch.
 - [x] 5.5 Replace the fixed `Intl.NumberFormat("zh-CN")` locales in `overview-data.ts` and `analysis-data.ts` with the active language, keeping values and currency separation unchanged.
-- [ ] 5.6 Localize only the two immutable system categories by `system_key`; confirm editable and owner-renamed categories always render their stored name (design D6).
-- [ ] 5.7 Add a blocking check that fails when a Chinese literal reappears in user-visible positions in `apps/web/src`.
-- [ ] 5.8 Verify both languages at 320/768/1024/1440 px for overflow and truncation, since English strings are typically longer than their Chinese equivalents.
+- [x] 5.6 Localize only the two immutable system categories by `system_key`; confirm editable and owner-renamed categories always render their stored name (design D6).
+- [x] 5.7 Add a blocking check that fails when a Chinese literal reappears in user-visible positions in `apps/web/src`.
+- [x] 5.8 Verify both languages at 320/768/1024/1440 px for overflow and truncation, since English strings are typically longer than their Chinese equivalents.
 
 ## 6. Documentation
 

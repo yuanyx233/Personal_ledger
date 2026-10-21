@@ -465,6 +465,9 @@ export const zhCN = {
   "bud.saved": "预算已保存。",
   "bud.unconfirmed": "未能确认预算保存结果，请重试。",
 
+  "category.system.TRANSFER": "转账",
+  "category.system.UNCLASSIFIED": "待分类",
+
   "page.kicker": "安全预览 · 本地账本",
 
   "shell.mainNavigation": "主导航",

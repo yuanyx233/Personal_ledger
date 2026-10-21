@@ -198,3 +198,33 @@ test("remembers an explicit interface language without touching the ledger", asy
   await expect(page.getByRole("heading", { level: 1, name: "Settings" })).toBeVisible();
   expect(writes).toEqual([]);
 });
+
+// English strings run longer than their Chinese equivalents, so the layout is
+// checked in both languages at the widths the interface is designed for.
+for (const width of [320, 768, 1024, 1440]) {
+  test(`keeps both languages free of horizontal overflow at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name === "chromium-mobile" && width > 768,
+      "Desktop widths are covered by the desktop project.",
+    );
+    await page.setViewportSize({ height: 900, width });
+
+    for (const language of ["zh-CN", "en"] as const) {
+      await page.addInitScript(
+        (value) => window.localStorage.setItem("ledger.language", value),
+        language,
+      );
+      for (const path of ["/", "/transactions", "/add", "/analysis", "/settings"]) {
+        await page.goto(path);
+        await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+        const widths = await page.evaluate(() => ({
+          client: document.documentElement.clientWidth,
+          scroll: document.documentElement.scrollWidth,
+        }));
+        expect(widths.scroll, `${language} ${path} at ${width}px`).toBe(widths.client);
+      }
+    }
+  });
+}

@@ -9,6 +9,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { readApi, writeApi } from "../../lib/browser-api";
 import { CategorySearch } from "./CategorySearch";
 import { useTranslation } from "../../i18n/useTranslation";
+import { categoryDisplayName } from "../../i18n/categoryName";
 
 type Category = CategoriesResponse["data"]["categories"][number];
 type SuggestedCategory = ManualTransactionPreviewResponse["data"]["category"];
@@ -164,7 +165,7 @@ export function NewMerchantConfirmation({
               >
                 {listedCategories.map((category) => (
                   <option key={category.id} value={category.id}>
-                    {category.name}
+                    {categoryDisplayName(category, t)}
                   </option>
                 ))}
               </select>

@@ -327,7 +327,11 @@ test("shows traceable raw detail and performs explicit scoped corrections withou
   );
 
   const category = page.getByLabel("新类别");
-  await expect(category.getByRole("option", { name: "Transfer" })).toHaveCount(1);
+  // The immutable system category is localised; the stored English name is not
+  // shown. Editable categories keep whatever name the owner gave them.
+  await expect(category.getByRole("option", { name: "转账" })).toHaveCount(1);
+  await expect(category.getByRole("option", { name: "Transfer" })).toHaveCount(0);
+  await expect(category.getByRole("option", { name: "Food & Dining" })).toHaveCount(1);
   await category.selectOption("category-expense-food");
   await page.getByRole("button", { name: "只改这一笔" }).click();
   await expect(page.getByText("已只修改当前交易。", { exact: true })).toBeVisible();

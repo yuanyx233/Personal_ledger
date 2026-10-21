@@ -499,6 +499,9 @@ export const en: Record<TranslationKey, string> = {
   "bud.saved": "Budget saved.",
   "bud.unconfirmed": "The budget result could not be confirmed. Try again.",
 
+  "category.system.TRANSFER": "Transfer",
+  "category.system.UNCLASSIFIED": "Unclassified",
+
   "page.kicker": "Secure preview · local ledger",
 
   "shell.mainNavigation": "Main navigation",

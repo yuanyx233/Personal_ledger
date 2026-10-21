@@ -6,6 +6,7 @@ import { LEDGER_CURRENCIES } from "../../lib/app-config";
 import { BudgetRow } from "./BudgetRow";
 import { useBudgets } from "./useBudgets";
 import { useTranslation } from "../../i18n/useTranslation";
+import { categoryDisplayName } from "../../i18n/categoryName";
 
 export function MonthlyBudgets({
   month,
@@ -87,7 +88,7 @@ export function MonthlyBudgets({
                   <BudgetRow
                     key={`${category.id}-${currency}`}
                     categoryId={category.id}
-                    name={category.name}
+                    name={categoryDisplayName(category, t)}
                     currency={currency}
                     month={month}
                     spent={

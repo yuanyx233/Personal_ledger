@@ -1,6 +1,7 @@
 import type { CategoriesResponse } from "@ledger/domain/api-contracts";
 import { useRef, useState } from "react";
 import { useTranslation } from "../../i18n/useTranslation";
+import { categoryDisplayName } from "../../i18n/categoryName";
 
 type Category = CategoriesResponse["data"]["categories"][number];
 
@@ -92,7 +93,7 @@ export function CategorySearch({
               {matches.map((category) => (
                 <li key={category.id}>
                   <button disabled={busy} onClick={() => onChoose(category)} type="button">
-                    {category.name}
+                    {categoryDisplayName(category, t)}
                   </button>
                 </li>
               ))}

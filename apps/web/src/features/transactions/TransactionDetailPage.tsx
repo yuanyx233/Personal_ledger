@@ -14,6 +14,7 @@ import { ReimbursementEditor } from "./ReimbursementEditor";
 import type { LanguageContextValue } from "../../i18n/context";
 import { useTranslation } from "../../i18n/useTranslation";
 import { useMoney } from "../../i18n/useMoney";
+import { categoryDisplayName } from "../../i18n/categoryName";
 
 type MoneyFormatter = (amountMinor: number, currency: string) => string;
 
@@ -321,7 +322,7 @@ export function TransactionDetailPage({
               </option>
               {editableCategories.map((category: CategoryReadModel) => (
                 <option key={category.id} value={category.id}>
-                  {category.name}
+                  {categoryDisplayName(category, t)}
                 </option>
               ))}
             </select>
