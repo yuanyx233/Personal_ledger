@@ -1,5 +1,6 @@
 import { resolveReportPeriod } from "@ledger/domain";
 
+import type { LanguageContextValue } from "../../i18n/context";
 import { LEDGER_TIME_ZONE } from "../../lib/app-config";
 
 export type AnalysisGrain = "CUSTOM" | "MONTH" | "QUARTER" | "YEAR";
@@ -151,7 +152,17 @@ export function trendPeriodInputs(query: AnalysisQuery): AnalysisPeriodInput[] {
   return offsets.map((offset) => queryPeriodInput(shiftedAnalysisQuery(query, offset)));
 }
 
-export function periodNavigationLabel(grain: AnalysisGrain, direction: "next" | "previous") {
-  const unit = grain === "MONTH" ? "月" : grain === "QUARTER" ? "季度" : "年";
-  return `${direction === "previous" ? "上一" : "下一"}${unit}`;
+export function periodNavigationLabel(
+  grain: AnalysisGrain,
+  direction: "next" | "previous",
+  t: LanguageContextValue["t"],
+) {
+  const unit = t(
+    grain === "MONTH"
+      ? "an.grain.MONTH"
+      : grain === "QUARTER"
+        ? "an.grain.QUARTER"
+        : "an.grain.YEAR",
+  );
+  return t(direction === "previous" ? "an.previousUnit" : "an.nextUnit", { unit });
 }

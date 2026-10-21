@@ -52,7 +52,7 @@ export function AnalysisPage({
       resolveReportPeriod(queryPeriodInput(next));
       commitQuery(next);
     } catch {
-      setFormError("请选择有效的日期范围；自定义范围最多为 730 天。 ");
+      setFormError(t("an.invalidRange"));
     }
   }
 
@@ -79,7 +79,7 @@ export function AnalysisPage({
         <DataState
           action={
             <button className="primary-action" onClick={retry} type="button">
-              重试
+              {t("an.retry")}
             </button>
           }
           variant="error"
@@ -100,7 +100,7 @@ export function AnalysisPage({
 
           {query.grain === "MONTH" ? (
             query.accountId ? (
-              <p className="budget-help">查看和设置月度预算，请将账户筛选切换为全部账户。</p>
+              <p className="budget-help">{t("an.budgetAllAccounts")}</p>
             ) : (
               <MonthlyBudgets
                 key={query.period}
@@ -111,7 +111,7 @@ export function AnalysisPage({
           ) : null}
 
           {state.data.cashFlow.data.sections.length === 0 ? (
-            <DataState title="所选周期没有可计入报表的交易" variant="empty" />
+            <DataState title={t("an.emptyPeriod")} variant="empty" />
           ) : (
             <div className="analysis-results">
               {state.data.cashFlow.data.sections.map((section) => (
@@ -121,7 +121,7 @@ export function AnalysisPage({
                 <AnalysisTrend currency={currency} key={currency} points={points} />
               ))}
               {state.data.spending.data.sections.length === 0 ? (
-                <DataState title="所选周期没有支出类别或商户数据" variant="empty" />
+                <DataState title={t("an.emptyBreakdown")} variant="empty" />
               ) : (
                 state.data.spending.data.sections.map((section) => (
                   <AnalysisBreakdowns

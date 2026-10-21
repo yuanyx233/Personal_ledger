@@ -13,16 +13,18 @@ import {
 import { resolveReportPeriod } from "@ledger/domain";
 
 import { LEDGER_TIME_ZONE } from "../../lib/app-config";
+import { useTranslation } from "../../i18n/useTranslation";
+import type { TranslationKey } from "../../i18n";
 
 type Account = AccountOptionsResponse["data"]["accounts"][number];
 type NavigateSearch = (event: MouseEvent<HTMLAnchorElement>, query: AnalysisQuery) => void;
 type ApplyQuery = (query: AnalysisQuery) => void;
 
-const GRAINS: readonly [AnalysisGrain, string][] = [
-  ["MONTH", "月"],
-  ["QUARTER", "季度"],
-  ["YEAR", "年"],
-  ["CUSTOM", "自定义"],
+const GRAINS: readonly [AnalysisGrain, TranslationKey][] = [
+  ["MONTH", "an.grain.MONTH"],
+  ["QUARTER", "an.grain.QUARTER"],
+  ["YEAR", "an.grain.YEAR"],
+  ["CUSTOM", "an.grain.CUSTOM"],
 ];
 
 function href(query: AnalysisQuery) {
@@ -40,6 +42,7 @@ export function AnalysisControls({
   onNavigate: NavigateSearch;
   query: AnalysisQuery;
 }) {
+  const { t } = useTranslation();
   const period = resolveReportPeriod(queryPeriodInput(query));
 
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -69,8 +72,8 @@ export function AnalysisControls({
 
   return (
     <section aria-labelledby="analysis-controls-title" className="analysis-controls">
-      <div className="analysis-grains" role="navigation" aria-label="分析周期粒度">
-        {GRAINS.map(([grain, label]) => {
+      <div className="analysis-grains" role="navigation" aria-label={t("an.grainNav")}>
+        {GRAINS.map(([grain, labelKey]) => {
           const next = grainQuery(grain, query);
           return (
             <a
@@ -79,7 +82,7 @@ export function AnalysisControls({
               key={grain}
               onClick={(event) => onNavigate(event, next)}
             >
-              {label}
+              {t(labelKey)}
             </a>
           );
         })}
@@ -87,16 +90,16 @@ export function AnalysisControls({
 
       <div className="analysis-period-heading">
         <div>
-          <p id="analysis-controls-title">{LEDGER_TIME_ZONE} 日历</p>
+          <p id="analysis-controls-title">{t("an.calendar", { zone: LEDGER_TIME_ZONE })}</p>
           <strong>{period.label}</strong>
         </div>
         {query.grain === "CUSTOM" ? null : (
-          <nav aria-label="周期导航">
+          <nav aria-label={t("an.periodNav")}>
             {(["previous", "next"] as const).map((direction) => {
               const next = shiftedAnalysisQuery(query, direction === "previous" ? -1 : 1);
               return (
                 <a href={href(next)} key={direction} onClick={(event) => onNavigate(event, next)}>
-                  {periodNavigationLabel(query.grain, direction)}
+                  {periodNavigationLabel(query.grain, direction, t)}
                 </a>
               );
             })}
@@ -107,14 +110,14 @@ export function AnalysisControls({
       <form key={href(query)} onSubmit={submit}>
         {query.grain === "MONTH" ? (
           <label>
-            月份
+            {t("an.month")}
             <input defaultValue={query.period} name="period" required type="month" />
           </label>
         ) : null}
         <label>
-          账户
+          {t("an.account")}
           <select defaultValue={query.accountId ?? ""} name="accountId">
-            <option value="">全部已启用账户</option>
+            <option value="">{t("an.allAccounts")}</option>
             {accounts.map((account) => (
               <option key={account.id} value={account.id}>
                 {account.displayName}
@@ -125,17 +128,17 @@ export function AnalysisControls({
         {query.grain === "CUSTOM" ? (
           <>
             <label>
-              开始日期
+              {t("an.dateFrom")}
               <input defaultValue={query.dateFrom} name="dateFrom" required type="date" />
             </label>
             <label>
-              结束日期
+              {t("an.dateTo")}
               <input defaultValue={query.dateTo} name="dateTo" required type="date" />
             </label>
           </>
         ) : null}
         <button className="primary-action" type="submit">
-          应用筛选
+          {t("an.apply")}
         </button>
       </form>
     </section>

@@ -1,11 +1,12 @@
 import type { CashFlowReportSection } from "@ledger/domain";
 
 import { formatMoney } from "./analysis-data";
+import { useTranslation } from "../../i18n/useTranslation";
 
 const METRICS = [
-  ["income", "收入", "incomeMinor"],
-  ["netSpending", "净支出", "netSpendingMinor"],
-  ["netCashFlow", "净现金流", "netCashFlowMinor"],
+  ["income", "an.metric.income", "incomeMinor"],
+  ["netSpending", "an.metric.netSpending", "netSpendingMinor"],
+  ["netCashFlow", "an.metric.netCashFlow", "netCashFlowMinor"],
 ] as const;
 
 function formatPercentage(value: number | null) {
@@ -36,41 +37,42 @@ function ComparisonValue({
 }
 
 export function AnalysisSummary({ section }: { section: CashFlowReportSection }) {
+  const { t } = useTranslation();
   return (
     <section className="analysis-block analysis-summary" data-analysis-currency={section.currency}>
       <div className="analysis-block-heading">
         <div>
-          <p>金额单位 · {section.currency}</p>
-          <h2>{section.currency} 指标</h2>
+          <p>{t("an.amountUnit", { currency: section.currency })}</p>
+          <h2>{t("an.metricsTitle", { currency: section.currency })}</h2>
         </div>
       </div>
 
       <dl className="analysis-metric-strip">
-        {METRICS.map(([, label, currentKey]) => (
-          <div key={label}>
-            <dt>{label}</dt>
+        {METRICS.map(([, labelKey, currentKey]) => (
+          <div key={labelKey}>
+            <dt>{t(labelKey)}</dt>
             <dd>{formatMoney(section.current[currentKey], section.currency)}</dd>
           </div>
         ))}
       </dl>
 
       <div className="analysis-table-wrap">
-        <table aria-label={`${section.currency} 指标比较`}>
+        <table aria-label={t("an.metricsTable", { currency: section.currency })}>
           <thead>
             <tr>
-              <th scope="col">指标</th>
-              <th scope="col">当前</th>
-              <th scope="col">较上一周期</th>
-              <th scope="col">较去年同期</th>
+              <th scope="col">{t("an.column.metric")}</th>
+              <th scope="col">{t("an.column.current")}</th>
+              <th scope="col">{t("an.column.vsPrevious")}</th>
+              <th scope="col">{t("an.column.vsLastYear")}</th>
             </tr>
           </thead>
           <tbody>
-            {METRICS.map(([comparisonKey, label, currentKey]) => {
+            {METRICS.map(([comparisonKey, labelKey, currentKey]) => {
               const previous = section.previousPeriod[comparisonKey];
               const previousYear = section.previousYear[comparisonKey];
               return (
-                <tr key={label}>
-                  <th scope="row">{label}</th>
+                <tr key={labelKey}>
+                  <th scope="row">{t(labelKey)}</th>
                   <td>{formatMoney(section.current[currentKey], section.currency)}</td>
                   <td>
                     <ComparisonValue

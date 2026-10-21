@@ -5,6 +5,8 @@ import {
 } from "@ledger/domain";
 import type { AccountOptionsResponse } from "@ledger/domain/api-contracts";
 
+import type { LanguageContextValue } from "../../i18n/context";
+
 import { shiftedAnalysisQuery, type AnalysisQuery } from "./analysis-period";
 
 export type CashFlowResponse = ReturnType<typeof cashFlowReportResponseSchema.parse>;
@@ -66,21 +68,28 @@ function expectedLabels(query: AnalysisQuery): string[] {
   });
 }
 
-function customTrend(section: CashFlowReportSection, report: CashFlowResponse) {
+function customTrend(
+  section: CashFlowReportSection,
+  report: CashFlowResponse,
+  t: LanguageContextValue["t"],
+) {
   return [
     {
       incomeMinor: section.previousYear.income.referenceMinor,
-      label: `去年同期 ${report.meta.periods.previousYear.label}`,
+      label: t("an.period.lastYear", { label: report.meta.periods.previousYear.label }),
       netCashFlowMinor: section.previousYear.netCashFlow.referenceMinor,
       netSpendingMinor: section.previousYear.netSpending.referenceMinor,
     },
     {
       incomeMinor: section.previousPeriod.income.referenceMinor,
-      label: `上一周期 ${report.meta.periods.previousPeriod.label}`,
+      label: t("an.period.previous", { label: report.meta.periods.previousPeriod.label }),
       netCashFlowMinor: section.previousPeriod.netCashFlow.referenceMinor,
       netSpendingMinor: section.previousPeriod.netSpending.referenceMinor,
     },
-    { ...section.current, label: `当前 ${report.meta.periods.current.label}` },
+    {
+      ...section.current,
+      label: t("an.period.current", { label: report.meta.periods.current.label }),
+    },
   ];
 }
 
@@ -90,6 +99,7 @@ export function assembleAnalysisData(
   spending: SpendingResponse,
   trendReports: CashFlowResponse[],
   query: AnalysisQuery,
+  t: LanguageContextValue["t"],
 ): AnalysisData {
   const accounts = accountOptions.data.accounts;
   if (query.grain === "CUSTOM") {
@@ -98,7 +108,10 @@ export function assembleAnalysisData(
       cashFlow,
       spending,
       trend: new Map(
-        cashFlow.data.sections.map((section) => [section.currency, customTrend(section, cashFlow)]),
+        cashFlow.data.sections.map((section) => [
+          section.currency,
+          customTrend(section, cashFlow, t),
+        ]),
       ),
     };
   }

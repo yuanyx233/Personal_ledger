@@ -2,6 +2,7 @@ import { parseBudgetAmount, type BudgetSetting } from "@ledger/domain";
 import { useRef, useState, type FormEvent } from "react";
 
 import { formatMoney } from "./analysis-data";
+import { useTranslation } from "../../i18n/useTranslation";
 
 export function BudgetRow({
   categoryId,
@@ -24,6 +25,7 @@ export function BudgetRow({
   saving: boolean;
   onSave: (setting: BudgetSetting) => Promise<boolean>;
 }) {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const editButton = useRef<HTMLButtonElement>(null);
@@ -56,7 +58,7 @@ export function BudgetRow({
       setError(null);
       void save(amount);
     } catch {
-      setError("请输入有效金额，最多两位小数，零表示不计划支出。");
+      setError(t("bud.invalidAmount"));
     }
   }
 
@@ -66,12 +68,16 @@ export function BudgetRow({
         <div>
           <h3>{name}</h3>
           <p>
-            已花 {formatMoney(spent, currency)}
-            {spent < 0 ? " · 净退款" : ""}
+            {t("bud.spent", { amount: formatMoney(spent, currency) })}
+            {spent < 0 ? t("bud.spentRefund") : ""}
           </p>
         </div>
         <div className="budget-row-limit">
-          <strong>{limit === null ? "未设置预算" : `上限 ${formatMoney(limit, currency)}`}</strong>
+          <strong>
+            {limit === null
+              ? t("bud.noLimit")
+              : t("bud.limit", { amount: formatMoney(limit, currency) })}
+          </strong>
           {editable ? (
             <button
               className="secondary-action"
@@ -83,24 +89,29 @@ export function BudgetRow({
               ref={editButton}
               type="button"
               aria-expanded={editing}
-              aria-label={`${limit === null ? "设置" : "修改"}${name}预算`}
+              aria-label={t("bud.editLabel", {
+                action: limit === null ? t("bud.action.set") : t("bud.action.change"),
+                name,
+              })}
             >
-              {limit === null ? "设置预算" : "修改"}
+              {limit === null ? t("bud.setButton") : t("bud.changeButton")}
             </button>
           ) : null}
         </div>
       </div>
       {remaining !== null ? (
         <>
-          <progress aria-label={`${name}预算使用进度`} max={100} value={progress} />
+          <progress aria-label={t("bud.progressLabel", { name })} max={100} value={progress} />
           <p className="budget-status">
             <span>
               {over
-                ? `超支 ${formatMoney(-remaining, currency)}`
-                : `剩余 ${formatMoney(remaining, currency)}`}
+                ? t("bud.over", { amount: formatMoney(-remaining, currency) })
+                : t("bud.remaining", { amount: formatMoney(remaining, currency) })}
             </span>
             <span>
-              {limit === 0 ? "零预算" : `已用 ${Math.max(0, (spent / limit!) * 100).toFixed(1)}%`}
+              {limit === 0
+                ? t("bud.zero")
+                : t("bud.used", { percent: Math.max(0, (spent / limit!) * 100).toFixed(1) })}
             </span>
           </p>
         </>
@@ -108,24 +119,24 @@ export function BudgetRow({
       {editing ? (
         <form className="budget-edit-form" onSubmit={submit}>
           <label>
-            {name}预算上限（{currency}）
+            {t("bud.fieldLabel", { currency, name })}
             <input
               autoFocus
               defaultValue={limit === null ? "" : (limit / 100).toFixed(2)}
               disabled={saving}
               inputMode="decimal"
               name="amount"
-              placeholder="例如 500.00"
+              placeholder={t("bud.placeholder")}
               required
               type="text"
             />
           </label>
           <div className="budget-edit-actions">
             <button className="primary-action" disabled={saving} type="submit">
-              {saving ? "保存中…" : "保存预算"}
+              {saving ? t("bud.saving") : t("bud.save")}
             </button>
             <button className="secondary-action" disabled={saving} onClick={close} type="button">
-              返回
+              {t("bud.back")}
             </button>
             {limit !== null ? (
               <button
@@ -134,7 +145,7 @@ export function BudgetRow({
                 onClick={() => void save(null)}
                 type="button"
               >
-                取消该预算
+                {t("bud.clear")}
               </button>
             ) : null}
           </div>

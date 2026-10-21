@@ -2,6 +2,8 @@ import { cashFlowReportResponseSchema, spendingReportResponseSchema } from "@led
 import { accountOptionsResponseSchema } from "@ledger/domain/api-contracts";
 import { useEffect, useMemo, useState } from "react";
 
+import { useTranslation } from "../../i18n/useTranslation";
+
 import { assembleAnalysisData, type AnalysisData } from "./analysis-data";
 import {
   parseAnalysisQuery,
@@ -36,6 +38,7 @@ function trendSearchParams(query: AnalysisQuery, grain: string, input: Record<st
 }
 
 export function useAnalysisData(query: AnalysisQuery) {
+  const { t } = useTranslation();
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<AnalysisLoadState>({ status: "loading" });
   const queryKey = reportSearchParams(query).toString();
@@ -74,7 +77,7 @@ export function useAnalysisData(query: AnalysisQuery) {
     ])
       .then(([accounts, cashFlow, spending, trendReports]) => {
         setState({
-          data: assembleAnalysisData(accounts, cashFlow, spending, trendReports, stableQuery),
+          data: assembleAnalysisData(accounts, cashFlow, spending, trendReports, stableQuery, t),
           queryKey,
           status: "ready",
         });
@@ -85,7 +88,7 @@ export function useAnalysisData(query: AnalysisQuery) {
         }
       });
     return () => controller.abort();
-  }, [attempt, queryKey, stableQuery]);
+  }, [attempt, queryKey, stableQuery, t]);
 
   const visibleState: AnalysisLoadState =
     state.status !== "loading" && state.queryKey !== queryKey ? { status: "loading" } : state;

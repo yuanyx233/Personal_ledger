@@ -3,6 +3,7 @@ import { categoriesResponseSchema, type CategoriesResponse } from "@ledger/domai
 import { useEffect, useState } from "react";
 
 import { readSession } from "../../lib/browser-api";
+import { useTranslation } from "../../i18n/useTranslation";
 
 type BudgetData = { budgets: BudgetRecord[]; categories: CategoriesResponse["data"]["categories"] };
 type State = { status: "loading" } | { status: "error" } | { status: "ready"; data: BudgetData };
@@ -14,6 +15,7 @@ async function read<T>(url: string, schema: { parse(value: unknown): T }, signal
 }
 
 export function useBudgets(month: string) {
+  const { t } = useTranslation();
   const [state, setState] = useState<State>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -57,11 +59,11 @@ export function useBudgets(month: string) {
       );
       setNotice({
         error: false,
-        text: setting.amountMinor === null ? "预算已取消。" : "预算已保存。",
+        text: setting.amountMinor === null ? t("bud.cleared") : t("bud.saved"),
       });
       return true;
     } catch {
-      setNotice({ error: true, text: "未能确认预算保存结果，请重试。" });
+      setNotice({ error: true, text: t("bud.unconfirmed") });
       return false;
     } finally {
       setSaving(false);

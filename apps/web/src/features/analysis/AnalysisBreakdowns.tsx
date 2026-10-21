@@ -2,6 +2,7 @@ import type { SpendingReportDrillDown, SpendingReportSection } from "@ledger/dom
 import type { MouseEvent } from "react";
 
 import { formatMoney } from "./analysis-data";
+import { useTranslation } from "../../i18n/useTranslation";
 
 type Navigate = (event: MouseEvent<HTMLAnchorElement>, path: string) => void;
 
@@ -26,6 +27,7 @@ export function AnalysisBreakdowns({
   onNavigate: Navigate;
   section: SpendingReportSection;
 }) {
+  const { t } = useTranslation();
   const categoryMaximum = Math.max(
     0,
     ...section.categoryDistribution.map(({ netSpendingMinor }) => Math.abs(netSpendingMinor)),
@@ -43,19 +45,19 @@ export function AnalysisBreakdowns({
       <section className="analysis-block">
         <div className="analysis-block-heading">
           <div>
-            <p>净支出 · {section.currency}</p>
-            <h2>{section.currency} 类别分布</h2>
-            <p>占比按各类别正净支出合计计算。</p>
+            <p>{t("an.breakdownKicker", { currency: section.currency })}</p>
+            <h2>{t("an.breakdownTitle", { currency: section.currency })}</h2>
+            <p>{t("an.breakdownNote")}</p>
           </div>
         </div>
         <div className="analysis-table-wrap">
-          <table aria-label={`${section.currency} 类别分布`}>
+          <table aria-label={t("an.breakdownTable", { currency: section.currency })}>
             <thead>
               <tr>
-                <th scope="col">类别</th>
-                <th scope="col">交易数</th>
-                <th scope="col">净支出</th>
-                <th scope="col">支出占比</th>
+                <th scope="col">{t("an.column.category")}</th>
+                <th scope="col">{t("an.column.count")}</th>
+                <th scope="col">{t("an.metric.netSpending")}</th>
+                <th scope="col">{t("an.column.share")}</th>
               </tr>
             </thead>
             <tbody>
@@ -65,7 +67,7 @@ export function AnalysisBreakdowns({
                   <tr key={row.categoryId}>
                     <th scope="row">
                       <a href={href} onClick={(event) => onNavigate(event, href)}>
-                        查看{row.categoryName}交易
+                        {t("an.viewCategory", { category: row.categoryName })}
                       </a>
                       <span aria-hidden="true" className="breakdown-bar">
                         <span
@@ -76,11 +78,11 @@ export function AnalysisBreakdowns({
                     <td>{row.transactionCount}</td>
                     <td>
                       {formatMoney(row.netSpendingMinor, section.currency)}（
-                      {row.netSpendingMinor < 0 ? "退款后为负" : "支出"}）
+                      {row.netSpendingMinor < 0 ? t("an.refundNegative") : t("an.spending")}）
                     </td>
                     <td>
                       {row.netSpendingMinor < 0
-                        ? "净退款"
+                        ? t("an.netRefund")
                         : positiveSpending === 0
                           ? "—"
                           : `${((row.netSpendingMinor / positiveSpending) * 100).toFixed(1)}%`}
@@ -97,24 +99,28 @@ export function AnalysisBreakdowns({
         <div className="analysis-block-heading">
           <div>
             <p>
-              前 {section.merchantRanking.length} / {section.merchantGroupCount} 组 ·{" "}
+              {t("an.merchantCount", {
+                shown: section.merchantRanking.length,
+                total: section.merchantGroupCount,
+              })}{" "}
               {section.currency}
             </p>
-            <h2>{section.currency} 商户排行</h2>
+            <h2>{t("an.merchantTitle", { currency: section.currency })}</h2>
           </div>
         </div>
         <div className="analysis-table-wrap">
-          <table aria-label={`${section.currency} 商户排行`}>
+          <table aria-label={t("an.merchantTable", { currency: section.currency })}>
             <thead>
               <tr>
-                <th scope="col">商户</th>
-                <th scope="col">交易数</th>
-                <th scope="col">净支出</th>
+                <th scope="col">{t("an.column.merchant")}</th>
+                <th scope="col">{t("an.column.count")}</th>
+                <th scope="col">{t("an.metric.netSpending")}</th>
               </tr>
             </thead>
             <tbody>
               {section.merchantRanking.map((row, index) => {
-                const merchantName = row.merchantName ?? row.normalizedMerchant ?? "未提供商户";
+                const merchantName =
+                  row.merchantName ?? row.normalizedMerchant ?? t("an.noMerchant");
                 const href = drillDownHref(row.drillDown);
                 return (
                   <tr key={row.merchantFamily ?? row.normalizedMerchant ?? `missing-${index}`}>

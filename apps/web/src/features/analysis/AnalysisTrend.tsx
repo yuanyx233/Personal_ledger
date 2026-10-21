@@ -1,4 +1,5 @@
 import { formatMoney, type AnalysisTrendPoint } from "./analysis-data";
+import { useTranslation } from "../../i18n/useTranslation";
 
 function barWidth(value: number, maximum: number) {
   return maximum === 0 ? 0 : Math.max(2, Math.round((Math.abs(value) / maximum) * 100));
@@ -11,13 +12,14 @@ export function AnalysisTrend({
   currency: string;
   points: AnalysisTrendPoint[];
 }) {
+  const { t } = useTranslation();
   const maximum = Math.max(0, ...points.map(({ netCashFlowMinor }) => Math.abs(netCashFlowMinor)));
   return (
     <section className="analysis-block" data-analysis-trend={currency}>
       <div className="analysis-block-heading">
         <div>
-          <p>现金流趋势 · {currency}</p>
-          <h2>{currency} 趋势</h2>
+          <p>{t("an.trendKicker", { currency })}</p>
+          <h2>{t("an.trendTitle", { currency })}</h2>
         </div>
       </div>
 
@@ -31,19 +33,19 @@ export function AnalysisTrend({
                 style={{ width: `${barWidth(point.netCashFlowMinor, maximum)}%` }}
               />
             </span>
-            <strong>{point.netCashFlowMinor < 0 ? "负" : "正"}</strong>
+            <strong>{point.netCashFlowMinor < 0 ? t("an.negative") : t("an.positive")}</strong>
           </div>
         ))}
       </div>
 
       <div className="analysis-table-wrap">
-        <table aria-label={`${currency} 现金流趋势`}>
+        <table aria-label={t("an.trendTable", { currency })}>
           <thead>
             <tr>
-              <th scope="col">周期</th>
-              <th scope="col">收入</th>
-              <th scope="col">净支出</th>
-              <th scope="col">净现金流</th>
+              <th scope="col">{t("an.column.period")}</th>
+              <th scope="col">{t("an.metric.income")}</th>
+              <th scope="col">{t("an.metric.netSpending")}</th>
+              <th scope="col">{t("an.metric.netCashFlow")}</th>
             </tr>
           </thead>
           <tbody>
@@ -54,7 +56,7 @@ export function AnalysisTrend({
                 <td>{formatMoney(point.netSpendingMinor, currency)}</td>
                 <td>
                   {formatMoney(point.netCashFlowMinor, currency)}（
-                  {point.netCashFlowMinor < 0 ? "负" : "正"}）
+                  {point.netCashFlowMinor < 0 ? t("an.negative") : t("an.positive")}）
                 </td>
               </tr>
             ))}

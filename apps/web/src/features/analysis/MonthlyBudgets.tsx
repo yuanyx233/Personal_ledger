@@ -5,6 +5,7 @@ import { LEDGER_CURRENCIES } from "../../lib/app-config";
 
 import { BudgetRow } from "./BudgetRow";
 import { useBudgets } from "./useBudgets";
+import { useTranslation } from "../../i18n/useTranslation";
 
 export function MonthlyBudgets({
   month,
@@ -13,6 +14,7 @@ export function MonthlyBudgets({
   month: string;
   sections: SpendingReportSection[];
 }) {
+  const { t } = useTranslation();
   const { state, saving, notice, save, retry } = useBudgets(month);
   const [currency, setCurrency] = useState(sections[0]?.currency ?? LEDGER_CURRENCIES[0]!);
   const currencies = [
@@ -29,11 +31,11 @@ export function MonthlyBudgets({
     <section className="analysis-block monthly-budgets" aria-labelledby="monthly-budgets-title">
       <div className="analysis-block-heading">
         <div>
-          <p>{month} · 全部账户</p>
-          <h2 id="monthly-budgets-title">Goal · 月度预算上限</h2>
+          <p>{t("bud.allAccounts", { month })}</p>
+          <h2 id="monthly-budgets-title">{t("bud.title")}</h2>
         </div>
         <label>
-          预算币种
+          {t("bud.currency")}
           <select
             disabled={saving}
             value={currency}
@@ -45,13 +47,8 @@ export function MonthlyBudgets({
           </select>
         </label>
       </div>
-      <p className="budget-help">
-        设置从 {month}{" "}
-        起每月沿用，直到下一次设置；更早月份和已单独设置的后续月份不变。额度每月重新计算。
-      </p>
-      <p className="budget-help">
-        已花金额为扣除退款、分摊和报销抵扣后的个人净支出，不含转账。各币种分别计算。
-      </p>
+      <p className="budget-help">{t("bud.carryNote", { month })}</p>
+      <p className="budget-help">{t("bud.spentNote")}</p>
       {notice ? (
         <p
           className={`detail-notice${notice.error ? " detail-notice--error" : ""}`}
@@ -61,12 +58,12 @@ export function MonthlyBudgets({
         </p>
       ) : null}
       {state.status === "loading" ? (
-        <p role="status">正在读取预算…</p>
+        <p role="status">{t("bud.loading")}</p>
       ) : state.status === "error" ? (
         <div role="alert">
-          <p>预算暂时无法读取。</p>
+          <p>{t("bud.failed")}</p>
           <button className="secondary-action" onClick={retry} type="button">
-            重试预算
+            {t("bud.retry")}
           </button>
         </div>
       ) : (
@@ -109,7 +106,7 @@ export function MonthlyBudgets({
                 ))}
             </ul>
           ) : (
-            <p>还没有支出类别，请先在记一笔中创建类别。</p>
+            <p>{t("bud.noCategories")}</p>
           )}
         </>
       )}
