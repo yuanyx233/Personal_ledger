@@ -13,11 +13,15 @@ function CategorySummary({
   refresh,
   rules,
 }: Pick<SettingsData, "categories" | "rules"> & { refresh: () => Promise<void> }) {
+  const { t } = useTranslation();
   return (
     <section className="settings-section">
-      <SectionHeading eyebrow="Exact match · 不回改历史" title="类别与商户规则" />
+      <SectionHeading eyebrow={t("settings.rules.eyebrow")} title={t("settings.rules.title")} />
       <p className="settings-muted">
-        {categories.filter(({ active }) => active).length} 个可用类别 · {rules.length} 条商户规则
+        {t("settings.rules.summary", {
+          categories: categories.filter(({ active }) => active).length,
+          rules: rules.length,
+        })}
       </p>
       <RuleSettings categories={categories} refresh={refresh} rules={rules} />
     </section>
@@ -25,15 +29,16 @@ function CategorySummary({
 }
 
 function ExportSummary() {
+  const { t } = useTranslation();
   return (
     <section className="settings-section">
-      <SectionHeading eyebrow="开放格式 · 不锁定" title="完整导出" />
-      <p className="settings-muted">下载文件可能包含完整财务记录，请只保存到你控制的设备。</p>
+      <SectionHeading eyebrow={t("settings.export.eyebrow")} title={t("settings.export.title")} />
+      <p className="settings-muted">{t("settings.export.warning")}</p>
       <div className="settings-export-actions">
         <a className="primary-action" href="/api/v1/exports/transactions.csv">
-          下载交易 CSV
+          {t("settings.export.csv")}
         </a>
-        <a href="/api/v1/exports/data.json">下载完整 JSON</a>
+        <a href="/api/v1/exports/data.json">{t("settings.export.json")}</a>
       </div>
     </section>
   );
@@ -60,7 +65,7 @@ export function SettingsPage({ online, route }: { online: boolean; route: AppRou
         <DataState
           action={
             <button className="primary-action" onClick={() => void retry()} type="button">
-              重试
+              {t("settings.retry")}
             </button>
           }
           variant="error"
@@ -68,16 +73,16 @@ export function SettingsPage({ online, route }: { online: boolean; route: AppRou
       ) : (
         <div className="settings-sections">
           <section className="settings-section">
-            <SectionHeading eyebrow="每月固定支出" title="订阅管理" />
-            <p>按月自动记账，取消时可选择生效日期并删除对应支出。</p>
+            <SectionHeading eyebrow={t("settings.sub.eyebrow")} title={t("settings.sub.title")} />
+            <p>{t("settings.sub.body")}</p>
             <a className="primary-action" href="/subscriptions">
-              管理订阅
+              {t("settings.sub.manage")}
             </a>
           </section>
           <CategorySummary categories={state.categories} refresh={refresh} rules={state.rules} />
           <section className="settings-section">
-            <SectionHeading eyebrow="账单录入" title="CSV 导入" />
-            <p>导入前预览，确认疑似重复。日常记账请使用“记一笔”。</p>
+            <SectionHeading eyebrow={t("settings.csv.eyebrow")} title={t("settings.csv.title")} />
+            <p>{t("settings.csv.body")}</p>
             <CsvImportSettings />
           </section>
           <ExportSummary />

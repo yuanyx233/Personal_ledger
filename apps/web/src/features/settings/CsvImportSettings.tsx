@@ -6,6 +6,7 @@ import {
 import { useState, type FormEvent } from "react";
 
 import { writeApi } from "../../lib/browser-api";
+import { useTranslation } from "../../i18n/useTranslation";
 
 type Preview = ReturnType<typeof csvImportPreviewResponseSchema.parse>["data"]["preview"];
 type ReviewDecisionValue = "IMPORT_NEW" | "SKIP" | `MERGE:${number}`;
@@ -25,6 +26,7 @@ async function fileBase64(file: File) {
 }
 
 export function CsvImportSettings() {
+  const { t } = useTranslation();
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [decisions, setDecisions] = useState<Record<number, ReviewDecisionValue>>({});
@@ -61,7 +63,7 @@ export function CsvImportSettings() {
       setPreview(response.data.preview);
       setDecisions({});
     } catch {
-      setNotice("CSV 预览失败；请检查 UTF-8 文件、表头和映射。");
+      setNotice(t("csv.previewFailed"));
     } finally {
       setBusy(false);
     }
@@ -75,7 +77,7 @@ export function CsvImportSettings() {
         existingMatch?.disposition === "SUSPECTED_EXISTING",
     );
     if (reviewRows.some(({ rowNumber }) => decisions[rowNumber] === undefined)) {
-      setNotice("请先逐行决定所有疑似重复记录。");
+      setNotice(t("csv.decideFirst"));
       return;
     }
     const request: CsvImportCommitRequest = {
@@ -106,33 +108,37 @@ export function CsvImportSettings() {
       );
       const counts = response.data.importBatch.counts;
       setNotice(
-        `CSV 已提交：新增 ${counts.importedNew} 笔，自动合并 ${counts.autoMerged} 笔，人工合并 ${counts.ownerMerged} 笔。`,
+        t("csv.committed", {
+          auto: counts.autoMerged,
+          new: counts.importedNew,
+          owner: counts.ownerMerged,
+        }),
       );
       setPreview(null);
     } catch {
-      setNotice("CSV 提交失败；预览可能已过期，请重新预览。");
+      setNotice(t("csv.commitFailed"));
     } finally {
       setBusy(false);
     }
   }
 
   const mappingFields = [
-    ["postedDate", "日期表头"],
-    ["description", "描述表头"],
-    ["amount", "金额表头"],
-    ["direction", "方向表头"],
-    ["currency", "币种表头"],
-    ["accountLabel", "账户表头"],
-    ["merchant", "商户表头（可选）"],
-    ["category", "类别表头（可选）"],
+    ["postedDate", t("csv.header.postedDate")],
+    ["description", t("csv.header.description")],
+    ["amount", t("csv.header.amount")],
+    ["direction", t("csv.header.direction")],
+    ["currency", t("csv.header.currency")],
+    ["accountLabel", t("csv.header.accountLabel")],
+    ["merchant", t("csv.header.merchant")],
+    ["category", t("csv.header.category")],
   ] as const;
   return (
     <div className="settings-csv">
-      <h3>CSV 两阶段导入</h3>
-      <p>提交时自动分类，优先沿用你的商户规则；无法识别或规则冲突的交易进入待分类列表。</p>
+      <h3>{t("csv.title")}</h3>
+      <p>{t("csv.lead")}</p>
       <form className="settings-form" onSubmit={(event) => void createPreview(event)}>
         <label className="settings-file-field">
-          CSV 文件
+          {t("csv.file")}
           <input
             accept=".csv,text/csv"
             onChange={(event) => setFile(event.target.files?.[0] ?? null)}
@@ -147,28 +153,35 @@ export function CsvImportSettings() {
           </label>
         ))}
         <button className="primary-action" disabled={busy || file === null} type="submit">
-          只预览，不写账本
+          {t("csv.previewOnly")}
         </button>
       </form>
       {preview ? (
         <div className="settings-preview">
-          <h4>预览 {preview.fileName}</h4>
-          <p>识别方式：{preview.adapter === "RBC_CA_V1" ? "RBC 加拿大流水" : "自定义 CSV 映射"}</p>
+          <h4>{t("csv.previewOf", { fileName: preview.fileName })}</h4>
           <p>
-            共 {preview.counts.total} 行 · 有效 {preview.counts.valid} · 无效{" "}
-            {preview.counts.invalid} · 重复 {preview.counts.duplicate}
+            {t("csv.adapter", {
+              adapter:
+                preview.adapter === "RBC_CA_V1" ? t("csv.adapter.rbc") : t("csv.adapter.custom"),
+            })}
           </p>
-          {preview.reviewRows.length > 0 ? (
-            <p>以下列表包含前 100 行，以及其后所有需要你决定的记录。</p>
-          ) : null}
+          <p>
+            {t("csv.counts", {
+              duplicate: preview.counts.duplicate,
+              invalid: preview.counts.invalid,
+              total: preview.counts.total,
+              valid: preview.counts.valid,
+            })}
+          </p>
+          {preview.reviewRows.length > 0 ? <p>{t("csv.truncationNote")}</p> : null}
           <div className="analysis-table-wrap">
-            <table aria-label="CSV 导入预览">
+            <table aria-label={t("csv.tableLabel")}>
               <thead>
                 <tr>
-                  <th>行</th>
-                  <th>日期</th>
-                  <th>描述</th>
-                  <th>状态/决定</th>
+                  <th>{t("csv.column.row")}</th>
+                  <th>{t("csv.column.date")}</th>
+                  <th>{t("csv.column.description")}</th>
+                  <th>{t("csv.column.decision")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -180,14 +193,14 @@ export function CsvImportSettings() {
                     <td>
                       {row.existingMatch?.disposition === "AUTO_MERGE_EXISTING" ? (
                         <span>
-                          高置信度，将合并到：
+                          {t("csv.highConfidence")}
                           {row.existingMatch.candidates[0]!.description}（
                           {row.existingMatch.candidates[0]!.postedDate}）
                         </span>
                       ) : row.duplicateEvidence === "SUSPECTED_SAME_FILE" ||
                         row.existingMatch?.disposition === "SUSPECTED_EXISTING" ? (
                         <select
-                          aria-label={`第 ${row.rowNumber} 行决定`}
+                          aria-label={t("csv.rowDecision", { row: row.rowNumber })}
                           onChange={(event) =>
                             setDecisions((current) => ({
                               ...current,
@@ -196,19 +209,22 @@ export function CsvImportSettings() {
                           }
                           value={decisions[row.rowNumber] ?? ""}
                         >
-                          <option value="">请选择</option>
+                          <option value="">{t("csv.chooseDecision")}</option>
                           {row.existingMatch?.candidates.map((candidate, candidateIndex) => (
                             <option key={candidate.transactionId} value={`MERGE:${candidateIndex}`}>
-                              合并到 {candidate.description}（{candidate.postedDate}）
+                              {t("csv.mergeInto", {
+                                date: candidate.postedDate,
+                                description: candidate.description,
+                              })}
                             </option>
                           ))}
-                          <option value="IMPORT_NEW">作为新交易导入</option>
-                          <option value="SKIP">跳过</option>
+                          <option value="IMPORT_NEW">{t("csv.importNew")}</option>
+                          <option value="SKIP">{t("csv.skip")}</option>
                         </select>
                       ) : row.status === "INVALID" ? (
-                        `无效：${row.errors.map(({ code }) => code).join("、")}`
+                        t("csv.invalid", { codes: row.errors.map(({ code }) => code).join(", ") })
                       ) : (
-                        "有效，将导入"
+                        t("csv.validWillImport")
                       )}
                     </td>
                   </tr>
@@ -222,32 +238,32 @@ export function CsvImportSettings() {
             onClick={() => void commit()}
             type="button"
           >
-            提交已确认行
+            {t("csv.commit")}
           </button>
           {confirmDiscard ? (
             <div className="destructive-confirmation" role="alert">
-              <strong>丢弃当前 CSV 预览？</strong>
-              <p>只清除浏览器中的预览和逐行决定；当前预览尚未写入任何账本交易。</p>
+              <strong>{t("csv.discardTitle")}</strong>
+              <p>{t("csv.discardBody")}</p>
               <div>
                 <button onClick={() => setConfirmDiscard(false)} type="button">
-                  取消
+                  {t("csv.cancel")}
                 </button>
                 <button
                   onClick={() => {
                     setPreview(null);
                     setDecisions({});
                     setConfirmDiscard(false);
-                    setNotice("CSV 预览已丢弃；账本没有改变。");
+                    setNotice(t("csv.discarded"));
                   }}
                   type="button"
                 >
-                  确认丢弃
+                  {t("csv.confirmDiscard")}
                 </button>
               </div>
             </div>
           ) : (
             <button className="danger-action" onClick={() => setConfirmDiscard(true)} type="button">
-              丢弃预览
+              {t("csv.discard")}
             </button>
           )}
         </div>

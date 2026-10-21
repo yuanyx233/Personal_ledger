@@ -8,6 +8,7 @@ import {
 import { useState, type FormEvent } from "react";
 
 import { readApi, writeApi } from "../../lib/browser-api";
+import { useTranslation } from "../../i18n/useTranslation";
 
 type Category = CategoriesResponse["data"]["categories"][number];
 type Rule = MerchantRuleListResponse["data"]["rules"][number];
@@ -21,6 +22,7 @@ export function RuleSettings({
   refresh: () => Promise<void>;
   rules: Rule[];
 }) {
+  const { t } = useTranslation();
   const [preview, setPreview] = useState<MerchantRulePreviewResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -43,7 +45,7 @@ export function RuleSettings({
         await readApi(`/api/v1/merchant-rule-previews?${query}`, merchantRulePreviewResponseSchema),
       );
     } catch {
-      setNotice("规则预览失败，请重试。");
+      setNotice(t("rules.previewFailed"));
     } finally {
       setBusy(false);
     }
@@ -60,11 +62,11 @@ export function RuleSettings({
         merchantRuleMutationResponseSchema,
       );
       setPreview(null);
-      setNotice("未来商户规则已保存；历史交易没有改变。");
+      setNotice(t("rules.saved"));
       await refresh();
       setConfirmRuleId(null);
     } catch {
-      setNotice("规则保存失败，可能已有相同 exact key。");
+      setNotice(t("rules.saveFailed"));
     } finally {
       setBusy(false);
     }
@@ -79,11 +81,11 @@ export function RuleSettings({
         { ...input, version: rule.version },
         merchantRuleMutationResponseSchema,
       );
-      setNotice("规则已更新；历史交易没有改变。");
+      setNotice(t("rules.updated"));
       await refresh();
       setConfirmRuleId(null);
     } catch {
-      setNotice("规则更新失败，请刷新后重试。");
+      setNotice(t("rules.updateFailed"));
     } finally {
       setBusy(false);
     }
@@ -93,11 +95,11 @@ export function RuleSettings({
     <>
       <form className="settings-form" onSubmit={(event) => void previewRule(event)}>
         <label>
-          商户显示名称
+          {t("rules.displayName")}
           <input name="displayMerchant" required />
         </label>
         <label>
-          未来分类
+          {t("rules.futureCategory")}
           <select name="categoryId" required>
             {targets.map((category) => (
               <option key={category.id} value={category.id}>
@@ -107,16 +109,19 @@ export function RuleSettings({
           </select>
         </label>
         <button className="primary-action" disabled={busy || targets.length === 0} type="submit">
-          预览 exact 规则
+          {t("rules.preview")}
         </button>
       </form>
       {preview ? (
         <div className="settings-preview" role="status">
-          <strong>规范化键：{preview.data.proposedRule.normalizedMerchant}</strong>
+          <strong>
+            {t("rules.normalizedKey", { key: preview.data.proposedRule.normalizedMerchant })}
+          </strong>
           <p>
-            匹配 {preview.meta.matchingTransactions} 笔，分类冲突{" "}
-            {preview.meta.conflictingTransactions}
-            笔；历史交易改变 0 笔。
+            {t("rules.matchSummary", {
+              conflicting: preview.meta.conflictingTransactions,
+              matching: preview.meta.matchingTransactions,
+            })}
           </p>
           <button
             className="primary-action"
@@ -124,7 +129,7 @@ export function RuleSettings({
             onClick={() => void savePreview()}
             type="button"
           >
-            确认保存未来规则
+            {t("rules.confirmSave")}
           </button>
         </div>
       ) : null}
@@ -141,7 +146,7 @@ export function RuleSettings({
               <span>exact key · {rule.normalizedMerchant}</span>
             </div>
             <select
-              aria-label={`${rule.displayMerchant} 分类`}
+              aria-label={t("rules.categoryFor", { merchant: rule.displayMerchant })}
               defaultValue={rule.categoryId}
               disabled={busy || !rule.active}
               onChange={(event) => void updateRule(rule, { categoryId: event.target.value })}
@@ -154,14 +159,14 @@ export function RuleSettings({
             </select>
             {confirmRuleId === rule.id ? (
               <div className="destructive-confirmation" role="alert">
-                <strong>确认停用？</strong>
-                <p>未来交易不再命中；历史交易不会重分类。</p>
+                <strong>{t("rules.confirmDisableTitle")}</strong>
+                <p>{t("rules.confirmDisableBody")}</p>
                 <div>
                   <button onClick={() => setConfirmRuleId(null)} type="button">
-                    取消
+                    {t("rules.cancel")}
                   </button>
                   <button onClick={() => void updateRule(rule, { active: false })} type="button">
-                    确认停用
+                    {t("rules.confirmDisable")}
                   </button>
                 </div>
               </div>
@@ -171,7 +176,7 @@ export function RuleSettings({
                 onClick={() => setConfirmRuleId(rule.id)}
                 type="button"
               >
-                {rule.active ? "停用规则" : "已停用"}
+                {rule.active ? t("rules.disable") : t("rules.disabled")}
               </button>
             )}
           </li>
