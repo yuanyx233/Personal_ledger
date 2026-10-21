@@ -41,11 +41,11 @@
 ## 6. Documentation
 
 - [x] 6.1 Confirm the documentation language decision with the owner (Open Question 3). Resolved 2026-09-23: guides in English, `README.md` bilingual.
-- [ ] 6.2 Write `docs/self-hosting.md`: D1 creation, migrations, Zero Trust Access application setup, the source of each of `ACCESS_AUD`, `ACCESS_TEAM_DOMAIN`, `OWNER_EMAIL` and `CSRF_HMAC_KEY`, the Cron Trigger, regional configuration, and a final check that the owner can log in while anonymous requests are denied.
-- [ ] 6.3 State the supported-currency limitation and the Cloudflare Access prerequisite explicitly in the guide.
-- [ ] 6.4 Strip self-hoster-facing content from `docs/free-preview-deployment.md`, leaving it as the owner's operations record.
-- [ ] 6.5 Update `README.md` for the self-hosting path, the configurable timezone and currency, the interface languages, and a link to the guide.
-- [ ] 6.6 Document how a self-hoster gets default categories in their own language (design D6, Open Question 4).
+- [x] 6.2 Write `docs/self-hosting.md`: D1 creation, migrations, Zero Trust Access application setup, the source of each of `ACCESS_AUD`, `ACCESS_TEAM_DOMAIN`, `OWNER_EMAIL` and `CSRF_HMAC_KEY`, the Cron Trigger, regional configuration, and a final check that the owner can log in while anonymous requests are denied.
+- [x] 6.3 State the supported-currency limitation and the Cloudflare Access prerequisite explicitly in the guide.
+- [x] 6.4 Strip self-hoster-facing content from `docs/free-preview-deployment.md`, leaving it as the owner's operations record.
+- [x] 6.5 Update `README.md` for the self-hosting path, the configurable timezone and currency, the interface languages, and a link to the guide.
+- [x] 6.6 Document how a self-hoster gets default categories in their own language (design D6, Open Question 4).
 
 ## 7. Verification
 

@@ -1,4 +1,13 @@
-# Deployment runbook
+# Deployment runbook — owner's operations record
+
+**Scope.** This file records the operation of one specific deployment: its release
+history, version identifiers, rollback targets, and the authorizations each change
+required. It is not an installation guide and deliberately refers to resources that
+belong to this deployment alone.
+
+**If you are setting up your own instance, read [docs/self-hosting.md](./self-hosting.md)
+instead.** That guide takes you from an empty Cloudflare account to a running ledger
+and names no resource belonging to anyone else.
 
 The application now uses one App Worker with static frontend assets and one D1 database. The App Worker has a scheduled handler and one `*/15 * * * *` Cron Trigger for monthly subscription catch-up. There is no Sync Worker binding, Plaid credential requirement, or bank connection flow.
 
@@ -64,7 +73,11 @@ The typography pass had 54 browser tests passing (2 existing skips). The actual 
 
 ## Configuration and authorized deployment
 
-Public configuration: `APP_TIMEZONE=America/Toronto`. Required encrypted secrets: `ACCESS_AUD`, `ACCESS_TEAM_DOMAIN`, `CSRF_HMAC_KEY`, `OWNER_EMAIL`. The CSRF key is 32 random bytes encoded as Base64. Never put real secrets in source, shell history, URLs, or logs.
+Public configuration for this deployment: `APP_TIMEZONE=America/Toronto` in `apps/web/wrangler.jsonc`, matched by `VITE_APP_TIMEZONE` in the ignored `apps/web/.env`, plus `VITE_LEDGER_CURRENCIES=CAD,USD`. Both timezone values are now configurable rather than fixed, and the application refuses to run when they disagree; keep them identical for this ledger, whose stored dates were all computed in Toronto.
+
+`apps/web/wrangler.jsonc` ships a `database_id` placeholder so forks cannot target this account. This deployment's real identifier is kept outside version control in `.wrangler/owner-deployment.json` and must be restored locally before deploying.
+
+Required encrypted secrets: `ACCESS_AUD`, `ACCESS_TEAM_DOMAIN`, `CSRF_HMAC_KEY`, `OWNER_EMAIL`. The CSRF key is 32 random bytes encoded as Base64. Never put real secrets in source, shell history, URLs, or logs.
 
 After explicit deployment authorization:
 
@@ -79,7 +92,7 @@ For a separately authorized remote database migration, first run the documented 
 
 ## Acceptance and rollback
 
-Verify anonymous/wrong-owner denial, authenticated session bootstrap, CSRF protection, manual and installment entry, subscription management and scheduled generation, category correction (including Transfer), CSV preview/commit/deduplication, currency-separated reports and both exports. Financial responses remain no-store; offline pages must not reveal cached ledger data. No bank, sync or review-queue API should be available.
+Verify anonymous/wrong-owner denial, authenticated session bootstrap, CSRF protection, manual and installment entry, subscription management and scheduled generation, category correction (including Transfer), CSV preview/commit/deduplication, currency-separated reports, both exports, and that the interface still renders in Chinese with Toronto dates. Financial responses remain no-store; offline pages must not reveal cached ledger data. No bank, sync or review-queue API should be available.
 
 On failure, preserve D1 and restore a verified compatible App Worker version under explicit authorization. Keep access denied if compatibility cannot be established. Validate login and ledger reads before re-enabling access.
 
