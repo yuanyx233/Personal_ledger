@@ -1,8 +1,8 @@
 import type { SpendingReportSection } from "@ledger/domain";
 import { useId, type MouseEvent } from "react";
 
-import { formatMoney } from "./overview-data";
 import { useTranslation } from "../../i18n/useTranslation";
+import { useMoney } from "../../i18n/useMoney";
 
 const COLORS = [
   "#657e69",
@@ -53,6 +53,7 @@ export function OverviewSpendingPie({
   section: SpendingReportSection;
   onNavigate: (event: MouseEvent<HTMLAnchorElement>, path: string) => void;
 }) {
+  const formatMoney = useMoney();
   const { t } = useTranslation();
   const titleId = useId();
   const rows = [...section.categoryDistribution].sort(

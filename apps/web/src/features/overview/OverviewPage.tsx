@@ -3,9 +3,10 @@ import type { MouseEvent } from "react";
 import type { AppRoute } from "../../app-routes";
 import { DataState } from "../../components/DataState/DataState";
 import { OverviewSpendingPie } from "./OverviewSpendingPie";
-import { formatMoney, type OverviewData } from "./overview-data";
+import { type OverviewData } from "./overview-data";
 import { useOverviewData } from "./useOverviewData";
 import { useTranslation } from "../../i18n/useTranslation";
+import { useMoney } from "../../i18n/useMoney";
 
 type Navigate = (event: MouseEvent<HTMLAnchorElement>, path: string) => void;
 
@@ -25,6 +26,7 @@ function amountLabel(label: string, amountMinor: number, currency: string) {
 }
 
 function OverviewSections({ data, onNavigate }: { data: OverviewData; onNavigate: Navigate }) {
+  const formatMoney = useMoney();
   const { t } = useTranslation();
   return (
     <div className="overview-sections">

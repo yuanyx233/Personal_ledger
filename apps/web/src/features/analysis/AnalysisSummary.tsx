@@ -1,7 +1,7 @@
 import type { CashFlowReportSection } from "@ledger/domain";
 
-import { formatMoney } from "./analysis-data";
 import { useTranslation } from "../../i18n/useTranslation";
+import { useMoney } from "../../i18n/useMoney";
 
 const METRICS = [
   ["income", "an.metric.income", "incomeMinor"],
@@ -26,6 +26,7 @@ function ComparisonValue({
   currency: string;
   percentageChangeBasisPoints: number | null;
 }) {
+  const formatMoney = useMoney();
   const sign = absoluteChangeMinor > 0 ? "+" : "";
   return (
     <>
@@ -37,6 +38,7 @@ function ComparisonValue({
 }
 
 export function AnalysisSummary({ section }: { section: CashFlowReportSection }) {
+  const formatMoney = useMoney();
   const { t } = useTranslation();
   return (
     <section className="analysis-block analysis-summary" data-analysis-currency={section.currency}>

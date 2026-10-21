@@ -9,11 +9,13 @@ import { useState, type MouseEvent } from "react";
 
 import { DataState } from "../../components/DataState/DataState";
 import { BrowserApiError, writeApi } from "../../lib/browser-api";
-import { formatMoney } from "../overview/overview-data";
 import { useTransactionDetail } from "./useTransactionDetail";
 import { ReimbursementEditor } from "./ReimbursementEditor";
 import type { LanguageContextValue } from "../../i18n/context";
 import { useTranslation } from "../../i18n/useTranslation";
+import { useMoney } from "../../i18n/useMoney";
+
+type MoneyFormatter = (amountMinor: number, currency: string) => string;
 
 type Transaction = TransactionDetailResponse["data"]["transaction"];
 
@@ -32,13 +34,14 @@ function displayValue(value: string | null) {
   return value || "—";
 }
 
-function signedAmount(transaction: Transaction) {
+function signedAmount(transaction: Transaction, formatMoney: MoneyFormatter) {
   const amountMinor = Number(transaction.amountMinor);
   const amount = transaction.direction === "OUTFLOW" ? -amountMinor : amountMinor;
   return formatMoney(amount, transaction.currency);
 }
 
 function DetailHeader({ transaction }: { transaction?: Transaction }) {
+  const formatMoney = useMoney();
   const { t } = useTranslation();
   return (
     <header className="page-header transaction-detail-header">
@@ -46,7 +49,7 @@ function DetailHeader({ transaction }: { transaction?: Transaction }) {
       <h1>{t("txDetail.title")}</h1>
       <p className="page-description">
         {transaction
-          ? `${signedAmount(transaction)} · ${t(STATUS_KEYS[transaction.status])} · ${transaction.postedDate}`
+          ? `${signedAmount(transaction, formatMoney)} · ${t(STATUS_KEYS[transaction.status])} · ${transaction.postedDate}`
           : t("txDetail.lead")}
       </p>
     </header>

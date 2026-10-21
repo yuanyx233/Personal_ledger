@@ -1,7 +1,9 @@
 import type { TransactionListResponse } from "@ledger/domain/api-contracts";
 
-import { formatMoney } from "../overview/overview-data";
 import { useTranslation } from "../../i18n/useTranslation";
+import { useMoney } from "../../i18n/useMoney";
+
+type MoneyFormatter = (amountMinor: number, currency: string) => string;
 
 type Transaction = TransactionListResponse["data"]["transactions"][number];
 
@@ -26,12 +28,13 @@ function transactionName(transaction: Transaction) {
   return transaction.merchantName ?? transaction.description;
 }
 
-function signedAmount(transaction: Transaction) {
+function signedAmount(transaction: Transaction, formatMoney: MoneyFormatter) {
   const amount = Number(transaction.amountMinor);
   return formatMoney(transaction.direction === "OUTFLOW" ? -amount : amount, transaction.currency);
 }
 
 function Badges({ transaction }: { transaction: Transaction }) {
+  const formatMoney = useMoney();
   const { t } = useTranslation();
   return (
     <span className="transaction-badges">
@@ -63,6 +66,7 @@ function Badges({ transaction }: { transaction: Transaction }) {
 }
 
 export function TransactionViews({ transactions }: { transactions: Transaction[] }) {
+  const formatMoney = useMoney();
   const { t } = useTranslation();
   return (
     <>
@@ -76,7 +80,7 @@ export function TransactionViews({ transactions }: { transactions: Transaction[]
                   {transaction.accountLabel ?? t("tx.unlabelledAccount")} · {transaction.postedDate}
                 </span>
               </span>
-              <span className="transaction-amount">{signedAmount(transaction)}</span>
+              <span className="transaction-amount">{signedAmount(transaction, formatMoney)}</span>
               <Badges transaction={transaction} />
             </a>
           </li>
@@ -107,7 +111,7 @@ export function TransactionViews({ transactions }: { transactions: Transaction[]
                 <td>
                   <Badges transaction={transaction} />
                 </td>
-                <td className="transaction-amount">{signedAmount(transaction)}</td>
+                <td className="transaction-amount">{signedAmount(transaction, formatMoney)}</td>
               </tr>
             ))}
           </tbody>

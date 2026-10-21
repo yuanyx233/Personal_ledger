@@ -1,7 +1,7 @@
 import { decimalAmountSchema, decimalAmountToMinorUnits } from "@ledger/domain/api-contracts";
 
-import { formatMoney } from "../overview/overview-data";
 import { useTranslation } from "../../i18n/useTranslation";
+import { useMoney } from "../../i18n/useMoney";
 
 export function ReimbursementFields({
   amount,
@@ -16,6 +16,7 @@ export function ReimbursementFields({
   value: string | null;
   onChange: (value: string | null) => void;
 }) {
+  const formatMoney = useMoney();
   const { t } = useTranslation();
   const total = decimalAmountSchema.safeParse(amount);
   const deduction = decimalAmountSchema.safeParse(value ?? "0");

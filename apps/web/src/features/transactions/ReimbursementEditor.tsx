@@ -5,9 +5,9 @@ import {
 import { useState, type FormEvent } from "react";
 
 import { BrowserApiError, writeApi } from "../../lib/browser-api";
-import { formatMoney } from "../overview/overview-data";
 import { ReimbursementFields } from "./ReimbursementFields";
 import { useTranslation } from "../../i18n/useTranslation";
+import { useMoney } from "../../i18n/useMoney";
 
 export function ReimbursementEditor({
   transaction,
@@ -16,6 +16,7 @@ export function ReimbursementEditor({
   transaction: TransactionDetailResponse["data"]["transaction"];
   onSaved: () => Promise<void>;
 }) {
+  const formatMoney = useMoney();
   const { t } = useTranslation();
   const [value, setValue] = useState<string | null>(
     transaction.reimbursementMinor > 0 ? (transaction.reimbursementMinor / 100).toFixed(2) : null,

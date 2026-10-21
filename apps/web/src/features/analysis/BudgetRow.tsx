@@ -1,8 +1,8 @@
 import { parseBudgetAmount, type BudgetSetting } from "@ledger/domain";
 import { useRef, useState, type FormEvent } from "react";
 
-import { formatMoney } from "./analysis-data";
 import { useTranslation } from "../../i18n/useTranslation";
+import { useMoney } from "../../i18n/useMoney";
 
 export function BudgetRow({
   categoryId,
@@ -25,6 +25,7 @@ export function BudgetRow({
   saving: boolean;
   onSave: (setting: BudgetSetting) => Promise<boolean>;
 }) {
+  const formatMoney = useMoney();
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);

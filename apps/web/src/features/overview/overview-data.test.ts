@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { currentPeriod } from "../analysis/analysis-period";
-import { formatMoney } from "./overview-data";
+import { formatMoney } from "../../lib/money";
 
 describe("overview report month", () => {
   it("uses the Toronto calendar month for both cash flow and spending", () => {
@@ -15,10 +15,10 @@ describe("money display", () => {
     // ICU renders HUF, IDR and COP with no decimals by local convention, but the
     // ledger stores them as hundredths, so dropping the fraction would make
     // displayed amounts fail to add up. Both minor units must always be shown.
-    expect(formatMoney(1234, "CAD")).toContain("12.34");
-    expect(formatMoney(1234, "EUR")).toContain("12.34");
-    expect(formatMoney(1234, "HUF")).toContain("12.34");
-    expect(formatMoney(1234, "IDR")).toContain("12.34");
-    expect(formatMoney(1234, "COP")).toContain("12.34");
+    expect(formatMoney(1234, "CAD", "zh-CN")).toContain("12.34");
+    expect(formatMoney(1234, "EUR", "zh-CN")).toContain("12.34");
+    expect(formatMoney(1234, "HUF", "zh-CN")).toContain("12.34");
+    expect(formatMoney(1234, "IDR", "zh-CN")).toContain("12.34");
+    expect(formatMoney(1234, "COP", "zh-CN")).toContain("12.34");
   });
 });

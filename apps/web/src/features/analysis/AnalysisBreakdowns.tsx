@@ -1,8 +1,8 @@
 import type { SpendingReportDrillDown, SpendingReportSection } from "@ledger/domain";
 import type { MouseEvent } from "react";
 
-import { formatMoney } from "./analysis-data";
 import { useTranslation } from "../../i18n/useTranslation";
+import { useMoney } from "../../i18n/useMoney";
 
 type Navigate = (event: MouseEvent<HTMLAnchorElement>, path: string) => void;
 
@@ -27,6 +27,7 @@ export function AnalysisBreakdowns({
   onNavigate: Navigate;
   section: SpendingReportSection;
 }) {
+  const formatMoney = useMoney();
   const { t } = useTranslation();
   const categoryMaximum = Math.max(
     0,

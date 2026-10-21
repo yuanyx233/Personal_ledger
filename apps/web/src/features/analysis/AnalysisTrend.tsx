@@ -1,5 +1,6 @@
-import { formatMoney, type AnalysisTrendPoint } from "./analysis-data";
+import { type AnalysisTrendPoint } from "./analysis-data";
 import { useTranslation } from "../../i18n/useTranslation";
+import { useMoney } from "../../i18n/useMoney";
 
 function barWidth(value: number, maximum: number) {
   return maximum === 0 ? 0 : Math.max(2, Math.round((Math.abs(value) / maximum) * 100));
@@ -12,6 +13,7 @@ export function AnalysisTrend({
   currency: string;
   points: AnalysisTrendPoint[];
 }) {
+  const formatMoney = useMoney();
   const { t } = useTranslation();
   const maximum = Math.max(0, ...points.map(({ netCashFlowMinor }) => Math.abs(netCashFlowMinor)));
   return (
